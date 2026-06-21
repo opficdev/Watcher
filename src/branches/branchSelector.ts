@@ -9,9 +9,11 @@ export function selectWatchedBranches(
   options: BranchSelectionOptions
 ): BranchContext[] {
   const now = options.now ?? new Date()
+  const includeRegexes = options.includePatterns?.map(wildcardToRegExp) ?? []
+  const excludeRegexes = options.excludePatterns?.map(wildcardToRegExp) ?? []
 
   return branches
-    .filter(branch => isWatchableBranch(branch, options, now))
+    .filter(branch => isWatchableBranch(branch, options, now, includeRegexes, excludeRegexes))
     .map(branch => ({
       baseBranch: options.baseBranch,
       name: branch.name,
@@ -26,7 +28,9 @@ export function selectWatchedBranches(
 function isWatchableBranch(
   branch: RepositoryBranch,
   options: BranchSelectionOptions,
-  now: Date
+  now: Date,
+  includeRegexes: RegExp[],
+  excludeRegexes: RegExp[]
 ): boolean {
   // base, default branch는 비교 기준이므로 감시 대상에서 제외
   if (branch.name === options.baseBranch || branch.name === options.defaultBranch) {
@@ -34,14 +38,14 @@ function isWatchableBranch(
   }
 
   // include pattern이 있으면 명시적으로 포함된 branch만 감시
-  if (options.includePatterns?.length &&
-      !matchesAnyPattern(branch.name, options.includePatterns)) {
+  if (includeRegexes.length &&
+      !matchesAnyRegex(branch.name, includeRegexes)) {
     return false
   }
 
   // exclude pattern은 include 결과보다 우선해 noise branch를 제거
-  if (options.excludePatterns?.length &&
-      matchesAnyPattern(branch.name, options.excludePatterns)) {
+  if (excludeRegexes.length &&
+      matchesAnyRegex(branch.name, excludeRegexes)) {
     return false
   }
 
@@ -65,11 +69,11 @@ function isStale(
   return branch.updatedAt.getTime() < staleTime
 }
 
-function matchesAnyPattern(
+function matchesAnyRegex(
   value: string,
-  patterns: string[]
+  regexes: RegExp[]
 ): boolean {
-  return patterns.some(pattern => wildcardToRegExp(pattern).test(value))
+  return regexes.some(regex => regex.test(value))
 }
 
 function wildcardToRegExp(pattern: string): RegExp {
