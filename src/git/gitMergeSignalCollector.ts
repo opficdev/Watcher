@@ -77,57 +77,60 @@ async function runVirtualMerge(input: {
       input.baseRef
     ])
 
-    const merge = await gitResult(worktree, [
-      "merge",
-      "--no-commit",
-      "--no-ff",
-      input.headRef
-    ])
+    try {
+      const merge = await gitResult(worktree, [
+        "merge",
+        "--no-commit",
+        "--no-ff",
+        input.headRef
+      ])
 
-    if (merge.exitCode === 0) {
+      if (merge.exitCode === 0) {
+        return {
+          status: "clean",
+          baseBranch: input.branch.baseBranch,
+          branchName: input.branch.name,
+          mergeBaseSha: input.mergeBaseSha,
+          changedFiles: input.changedFiles,
+          conflictFiles: []
+        }
+      }
+
+      const conflictFiles = await gitLines(worktree, [
+        "diff",
+        "--name-only",
+        "--diff-filter=U"
+      ])
+
+      if (0 < conflictFiles.length) {
+        return {
+          status: "confirmed_conflict",
+          baseBranch: input.branch.baseBranch,
+          branchName: input.branch.name,
+          mergeBaseSha: input.mergeBaseSha,
+          changedFiles: input.changedFiles,
+          conflictFiles
+        }
+      }
+
       return {
-        status: "clean",
+        status: "merge_check_failed",
         baseBranch: input.branch.baseBranch,
         branchName: input.branch.name,
         mergeBaseSha: input.mergeBaseSha,
         changedFiles: input.changedFiles,
-        conflictFiles: []
+        conflictFiles: [],
+        errorMessage: formatGitError(merge.stderr)
       }
-    }
-
-    const conflictFiles = await gitLines(worktree, [
-      "diff",
-      "--name-only",
-      "--diff-filter=U"
-    ])
-
-    if (0 < conflictFiles.length) {
-      return {
-        status: "confirmed_conflict",
-        baseBranch: input.branch.baseBranch,
-        branchName: input.branch.name,
-        mergeBaseSha: input.mergeBaseSha,
-        changedFiles: input.changedFiles,
-        conflictFiles
-      }
-    }
-
-    return {
-      status: "merge_check_failed",
-      baseBranch: input.branch.baseBranch,
-      branchName: input.branch.name,
-      mergeBaseSha: input.mergeBaseSha,
-      changedFiles: input.changedFiles,
-      conflictFiles: [],
-      errorMessage: formatGitError(merge.stderr)
+    } finally {
+      await gitResult(input.options.repositoryPath, [
+        "worktree",
+        "remove",
+        "--force",
+        worktree
+      ])
     }
   } finally {
-    await gitResult(input.options.repositoryPath, [
-      "worktree",
-      "remove",
-      "--force",
-      worktree
-    ])
     await rm(root, { recursive: true, force: true })
   }
 }
