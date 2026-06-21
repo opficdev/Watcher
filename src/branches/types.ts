@@ -23,10 +23,6 @@ export type RepositoryBranch = {
 export type BranchSelectionOptions = {
   baseBranch: string
   defaultBranch?: string
-  includePatterns?: string[]
-  excludePatterns?: string[]
-  staleDays?: number
-  now?: Date
 }
 
 export type BranchContext = {

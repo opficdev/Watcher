@@ -12,11 +12,10 @@ test("collects watched branch contexts from source", async () => {
   ])
 
   const contexts = await collectBranchContexts(source, {
-    baseBranch: "main",
-    excludePatterns: ["bot/*"]
+    baseBranch: "main"
   })
 
-  assert.deepEqual(contexts.map(context => context.name), ["feature/watch"])
+  assert.deepEqual(contexts.map(context => context.name), ["feature/watch", "bot/dependency"])
   assert.equal(contexts[0]?.baseBranch, "main")
   assert.equal(contexts[0]?.headSha, "feature/watch-sha")
 })
