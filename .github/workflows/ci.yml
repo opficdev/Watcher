@@ -5,10 +5,11 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   build:
-    name: Build TypeScript
+    name: Build
     runs-on: macos-latest
     steps:
       - name: Checkout
@@ -25,7 +26,82 @@ jobs:
         run: npm ci
 
       - name: Build
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee build.log
+
+      - name: Comment build failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          {
+            echo "## CI Build 실패"
+            echo
+            echo "- 실패 위치: \`Build\` job"
+            echo "- 실행 로그: ${RUN_URL}"
+            echo
+            echo "\`\`\`text"
+            if [ -f build.log ]; then
+              tail -n 80 build.log
+            else
+              echo "build.log가 생성되기 전에 실패함"
+            fi
+            echo "\`\`\`"
+          } > comment.md
+          gh pr comment "${PR_NUMBER}" --body-file comment.md
+
+  test:
+    name: Test
+    runs-on: macos-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare test build
         run: npm run build
 
       - name: Test
-        run: npm test
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test.log
+
+      - name: Comment test failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          {
+            echo "## CI Test 실패"
+            echo
+            echo "- 실패 위치: \`Test\` job"
+            echo "- 실행 로그: ${RUN_URL}"
+            echo
+            echo "\`\`\`text"
+            if [ -f test.log ]; then
+              tail -n 80 test.log
+            else
+              echo "test.log가 생성되기 전에 실패함"
+            fi
+            echo "\`\`\`"
+          } > comment.md
+          gh pr comment "${PR_NUMBER}" --body-file comment.md
