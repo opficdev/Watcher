@@ -2,6 +2,13 @@ export type BranchPullRequestMetadata = {
   number: number
   title: string
   url: string
+  author?: string
+}
+
+export type BranchCheckMetadata = {
+  name: string
+  status: string
+  conclusion?: string
 }
 
 export type RepositoryBranch = {
@@ -9,6 +16,7 @@ export type RepositoryBranch = {
   sha: string
   author?: string
   updatedAt?: Date
+  checks?: BranchCheckMetadata[]
   pullRequest?: BranchPullRequestMetadata
 }
 
@@ -22,9 +30,11 @@ export type BranchSelectionOptions = {
 }
 
 export type BranchContext = {
+  baseBranch: string
   name: string
-  sha: string
+  headSha: string
   author?: string
   updatedAt?: Date
+  checks: BranchCheckMetadata[]
   pullRequest?: BranchPullRequestMetadata
 }

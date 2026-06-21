@@ -13,10 +13,12 @@ export function selectWatchedBranches(
   return branches
     .filter(branch => isWatchableBranch(branch, options, now))
     .map(branch => ({
+      baseBranch: options.baseBranch,
       name: branch.name,
-      sha: branch.sha,
+      headSha: branch.sha,
       author: branch.author,
       updatedAt: branch.updatedAt,
+      checks: branch.checks ?? [],
       pullRequest: branch.pullRequest
     }))
 }

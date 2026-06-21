@@ -77,6 +77,34 @@ test("keeps pull request metadata optional", () => {
   assert.equal(selected[0]?.pullRequest?.number, 12)
 })
 
+// 선택된 branch가 이후 분석에 필요한 base/head/check metadata를 포함하는지 확인
+test("builds branch context metadata", () => {
+  const selected = selectWatchedBranches([
+    {
+      ...branch("feature/watch"),
+      checks: [
+        {
+          name: "CI",
+          status: "completed",
+          conclusion: "success"
+        }
+      ]
+    }
+  ], {
+    baseBranch: "main"
+  })
+
+  assert.equal(selected[0]?.baseBranch, "main")
+  assert.equal(selected[0]?.headSha, "feature/watch-sha")
+  assert.deepEqual(selected[0]?.checks, [
+    {
+      name: "CI",
+      status: "completed",
+      conclusion: "success"
+    }
+  ])
+})
+
 function branch(name: string, updatedAt?: Date): RepositoryBranch {
   return {
     name,
