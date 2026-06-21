@@ -15,18 +15,20 @@ export async function collectGitMergeSignal(
   const remote = options.remoteName ?? "origin"
   const baseRef = `refs/remotes/${remote}/${branch.baseBranch}`
   const headRef = `refs/remotes/${remote}/${branch.name}`
+  let mergeBaseSha: string | undefined
+  let changedFiles: string[] = []
 
   try {
     // remote tracking ref 기준으로 base/head를 맞춘 뒤 merge signal을 계산
     await fetchBranch(options.repositoryPath, remote, branch.baseBranch)
     await fetchBranch(options.repositoryPath, remote, branch.name)
 
-    const mergeBaseSha = await gitOutput(options.repositoryPath, [
+    mergeBaseSha = await gitOutput(options.repositoryPath, [
       "merge-base",
       baseRef,
       headRef
     ])
-    const changedFiles = await gitLines(options.repositoryPath, [
+    changedFiles = await gitLines(options.repositoryPath, [
       "diff",
       "--name-only",
       mergeBaseSha,
@@ -46,7 +48,8 @@ export async function collectGitMergeSignal(
       status: "merge_check_failed",
       baseBranch: branch.baseBranch,
       branchName: branch.name,
-      changedFiles: [],
+      mergeBaseSha,
+      changedFiles,
       conflictFiles: [],
       errorMessage: formatGitError(error)
     }
