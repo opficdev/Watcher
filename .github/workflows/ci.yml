@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   issues: write
 
 jobs:
@@ -26,34 +27,7 @@ jobs:
         run: npm ci
 
       - name: Build
-        shell: bash
-        run: |
-          set -o pipefail
-          npm run build 2>&1 | tee build.log
-
-      - name: Comment build failure
-        if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        shell: bash
-        run: |
-          {
-            echo "## CI Build 실패"
-            echo
-            echo "- 실패 위치: \`Build\` job"
-            echo "- 실행 로그: ${RUN_URL}"
-            echo
-            echo "\`\`\`text"
-            if [ -f build.log ]; then
-              tail -n 80 build.log
-            else
-              echo "build.log가 생성되기 전에 실패함"
-            fi
-            echo "\`\`\`"
-          } > comment.md
-          gh pr comment "${PR_NUMBER}" --body-file comment.md
+        run: npm run build
 
   test:
     name: Test
@@ -77,31 +51,39 @@ jobs:
         run: npm run build
 
       - name: Test
-        shell: bash
-        run: |
-          set -o pipefail
-          npm test 2>&1 | tee test.log
+        run: npm test
 
-      - name: Comment test failure
-        if: failure()
+  report:
+    name: Report
+    runs-on: ubuntu-latest
+    needs: [build, test]
+    if: always() && (needs.build.result == 'failure' || needs.test.result == 'failure') && github.event.pull_request.head.repo.fork == false
+    steps:
+      - name: Comment CI failure on PR
         env:
           GH_TOKEN: ${{ github.token }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          TEST_RESULT: ${{ needs.test.result }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         shell: bash
         run: |
+          log_file="$(mktemp)"
+
+          if ! gh run view "${GITHUB_RUN_ID}" --repo "${GITHUB_REPOSITORY}" --log-failed > "${log_file}"; then
+            echo "failed logs를 조회하지 못함" > "${log_file}"
+          fi
+
           {
-            echo "## CI Test 실패"
+            echo "## CI 실패"
             echo
-            echo "- 실패 위치: \`Test\` job"
+            echo "- Build: \`${BUILD_RESULT}\`"
+            echo "- Test: \`${TEST_RESULT}\`"
             echo "- 실행 로그: ${RUN_URL}"
             echo
             echo "\`\`\`text"
-            if [ -f test.log ]; then
-              tail -n 80 test.log
-            else
-              echo "test.log가 생성되기 전에 실패함"
-            fi
+            tail -n 120 "${log_file}"
             echo "\`\`\`"
           } > comment.md
+
           gh pr comment "${PR_NUMBER}" --body-file comment.md
