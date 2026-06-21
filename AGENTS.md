@@ -29,7 +29,7 @@
 ## Commit Instructions
 - Commit messages must start with a predefined prefix such as `feat`, `fix`, `refactor`, or `chore`.
 - Write prose in Korean.
-- Keep implementation names such as `ToastPresenter`, `toastHost`, `MainView`, `DevLogPresentation`, file paths, commands, branch names, and commit hashes in their original form.
+- Keep implementation names such as `GitHubClient`, `sendDiscordWebhook`, `buildDiscordReport`, `merge-risk-watch.yml`, file paths, commands, branch names, and commit hashes in their original form.
 - Do not translate implementation names into Korean unless the user explicitly asks for a user-facing Korean label.
 - Do not write a commit message body.
 - Commit only the files related to the current change.
