@@ -33,7 +33,7 @@ function recommendedActionFor(
 ): AiRecommendedAction {
   const value = objectFor(action, `recommendedActions[${index}]`)
   const priority = priorityFor(value.priority, `recommendedActions[${index}].priority`)
-  const files = value.files === undefined
+  const files = value.files == null
     ? undefined
     : arrayFor(value.files, `recommendedActions[${index}].files`)
       .map((file, fileIndex) => stringFor(file, `recommendedActions[${index}].files[${fileIndex}]`))

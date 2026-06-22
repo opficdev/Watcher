@@ -77,6 +77,21 @@ test("rejects non-array optional arrays", () => {
   )
 })
 
+// action files가 null이면 optional field 없음으로 처리하는지 확인
+test("defaults null action files", () => {
+  const prediction = validateAiPredictionResponse({
+    ...validResponse(),
+    recommendedActions: [{
+      title: "check files",
+      description: "shared.ts 확인",
+      priority: "medium",
+      files: null
+    }]
+  })
+
+  assert.equal(prediction.recommendedActions[0]?.files, undefined)
+})
+
 // files가 있으면 string 배열이어야 하는지 확인
 test("rejects non-string action files", () => {
   assert.throws(
