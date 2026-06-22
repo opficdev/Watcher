@@ -78,6 +78,7 @@ function toReportItem(input: MergeRiskReportInput): MergeRiskReportItem {
     author: input.branch.author,
     updatedAt: input.branch.updatedAt,
     pullRequest: input.branch.pullRequest,
+    aiPrediction: input.aiPrediction,
     branch: input.branch
   }
 }

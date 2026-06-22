@@ -7,6 +7,7 @@ import {
   type BranchRisk,
   type BranchRiskReasonCode,
   type BranchRiskStatus as BranchRiskStatusType,
+  type AiPredictionResult,
   type MergeRiskReportInput
 } from "../../src/index.js"
 
@@ -113,11 +114,52 @@ test("keeps pull request metadata when present", () => {
   })
 })
 
+// AI predicted 결과를 report item에 보존하는지 확인
+test("keeps predicted AI result when present", () => {
+  const prediction = predictedAiResult("feature/ai")
+  const report = buildMergeRiskReport([
+    input("feature/ai", BranchRiskStatus.High, 70, {}, prediction)
+  ], "main")
+
+  assert.deepEqual(report.sections[0]?.items[0]?.aiPrediction, prediction)
+})
+
+// AI skipped 결과를 deterministic report와 분리해 보존하는지 확인
+test("keeps skipped AI result when present", () => {
+  const prediction: AiPredictionResult = {
+    status: "skipped",
+    branchName: "feature/skipped",
+    baseBranch: "main",
+    reason: "below_threshold"
+  }
+  const report = buildMergeRiskReport([
+    input("feature/skipped", BranchRiskStatus.Low, 0, {}, prediction)
+  ], "main")
+
+  assert.deepEqual(report.sections[0]?.items[0]?.aiPrediction, prediction)
+})
+
+// AI failed 결과를 deterministic report와 분리해 보존하는지 확인
+test("keeps failed AI result when present", () => {
+  const prediction: AiPredictionResult = {
+    status: "failed",
+    branchName: "feature/failed",
+    baseBranch: "main",
+    errorMessage: "Gemini request failed"
+  }
+  const report = buildMergeRiskReport([
+    input("feature/failed", BranchRiskStatus.Medium, 25, {}, prediction)
+  ], "main")
+
+  assert.deepEqual(report.sections[0]?.items[0]?.aiPrediction, prediction)
+})
+
 function input(
   branchName: string,
   status: BranchRiskStatusType,
   score: number,
-  metadata: Partial<BranchContext> = {}
+  metadata: Partial<BranchContext> = {},
+  aiPrediction?: AiPredictionResult
 ): MergeRiskReportInput {
   const context = branch(branchName, metadata)
 
@@ -129,7 +171,8 @@ function input(
       score,
       status,
       reasons: [reason("clean_merge")]
-    }
+    },
+    aiPrediction
   }
 }
 
@@ -151,5 +194,26 @@ function reason(code: BranchRiskReasonCode): BranchRisk["reasons"][number] {
     code,
     message: code,
     scoreImpact: 0
+  }
+}
+
+function predictedAiResult(branchName: string): AiPredictionResult {
+  return {
+    status: "predicted",
+    branchName,
+    baseBranch: "main",
+    prediction: {
+      branchName,
+      baseBranch: "main",
+      prediction: "공유 파일 변경 의도가 겹칠 가능성 있음",
+      confidence: 82,
+      recommendedActions: [{
+        title: "base branch rebase",
+        description: "최신 main 기준으로 rebase 후 실제 충돌 여부 확인",
+        priority: "high",
+        files: ["src/shared.ts"]
+      }],
+      falsePositiveNotes: ["파일은 같지만 line range가 다르면 false positive 가능성 있음"]
+    }
   }
 }
