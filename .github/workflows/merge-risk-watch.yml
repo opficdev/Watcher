@@ -1,0 +1,93 @@
+name: Merge Risk Watch
+
+on:
+  workflow_call:
+    inputs:
+      repository:
+        description: "감시할 repository. owner/repo 형식"
+        required: true
+        type: string
+      base_branch:
+        description: "merge risk를 비교할 기준 branch"
+        required: true
+        type: string
+      default_branch:
+        description: "감시 대상에서 제외할 default branch"
+        required: false
+        type: string
+        default: ""
+      critical_file_patterns:
+        description: "critical file wildcard pattern 목록. 줄바꿈으로 구분"
+        required: false
+        type: string
+        default: ""
+    secrets:
+      watcher_github_token:
+        description: "감시 대상 repository checkout, fetch, metadata 조회에 사용할 token"
+        required: true
+      gemini_api_key:
+        description: "Gemini prediction 호출에 사용할 API key"
+        required: true
+      discord_webhook_url:
+        description: "선택 사항. report를 전송할 Discord webhook URL"
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+  checks: read
+  pull-requests: read
+
+jobs:
+  watch:
+    name: Watch Merge Risk
+    runs-on: macos-latest
+    steps:
+      - name: Checkout watched repository
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.repository }}
+          token: ${{ secrets.watcher_github_token }}
+          path: watched-repository
+          ref: ${{ inputs.base_branch }}
+          fetch-depth: 0
+
+      - name: Fetch watched branches
+        working-directory: watched-repository
+        run: git fetch origin '+refs/heads/*:refs/remotes/origin/*' --prune
+
+      - name: Checkout Watcher
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: watcher
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: watcher/package-lock.json
+
+      - name: Install Watcher dependencies
+        working-directory: watcher
+        run: npm ci
+
+      - name: Build Watcher
+        working-directory: watcher
+        run: npm run build
+
+      - name: Run Watcher
+        working-directory: watcher
+        env:
+          GITHUB_TOKEN: ${{ secrets.watcher_github_token }}
+          GEMINI_API_KEY: ${{ secrets.gemini_api_key }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.discord_webhook_url }}
+          WATCHER_REPOSITORY: ${{ inputs.repository }}
+          WATCHER_GITHUB_API_URL: ${{ github.api_url }}
+          WATCHER_REPOSITORY_PATH: ${{ github.workspace }}/watched-repository
+          WATCHER_BASE_BRANCH: ${{ inputs.base_branch }}
+          WATCHER_DEFAULT_BRANCH: ${{ inputs.default_branch }}
+          WATCHER_CRITICAL_FILE_PATTERNS: ${{ inputs.critical_file_patterns }}
+        run: npm run watch
