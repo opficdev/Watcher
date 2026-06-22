@@ -20,7 +20,11 @@ test("predicts selected merge risk payloads", async () => {
 
   assert.deepEqual(results.map(result => result.status), ["skipped", "predicted"])
   assert.equal(client.prompts.length, 1)
-  assert.equal(predictedBranchName(results[1]), "feature/high")
+  const predicted = results[1]
+  assert.equal(
+    predicted?.status === "predicted" ? predicted.prediction.branchName : undefined,
+    "feature/high"
+  )
 })
 
 // custom threshold를 runner 옵션으로 전달할 수 있는지 확인
@@ -35,7 +39,11 @@ test("uses custom prediction threshold", async () => {
 
   assert.deepEqual(results.map(result => result.status), ["skipped", "predicted"])
   assert.equal(client.prompts.length, 1)
-  assert.equal(predictedBranchName(results[1]), "feature/critical")
+  const predicted = results[1]
+  assert.equal(
+    predicted?.status === "predicted" ? predicted.prediction.branchName : undefined,
+    "feature/critical"
+  )
 })
 
 // AI client 오류가 전체 실행 실패가 아니라 branch 단위 failed 결과로 기록되는지 확인
@@ -93,12 +101,6 @@ class AiPredictionClientSpy implements AiPredictionClient {
 
     return this.response ?? validResponse(branchNameFrom(prompt))
   }
-}
-
-function predictedBranchName(
-  result: Awaited<ReturnType<typeof predictMergeRisksWithAi>>[number] | undefined
-): string | undefined {
-  return result?.status === "predicted" ? result.prediction.branchName : undefined
 }
 
 function branchNameFrom(prompt: AiPredictionPrompt): string {

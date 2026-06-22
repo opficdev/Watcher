@@ -19,7 +19,12 @@ export async function predictMergeRisksWithAi(
 
   for (const payload of payloads) {
     if (!targets.has(payload)) {
-      results.push(skippedResultFor(payload))
+      results.push({
+        status: "skipped",
+        branchName: payload.branch.name,
+        baseBranch: payload.branch.baseBranch,
+        reason: "below_threshold"
+      })
       continue
     }
 
@@ -27,16 +32,6 @@ export async function predictMergeRisksWithAi(
   }
 
   return results
-}
-
-// deterministic threshold 미만 branch는 AI 호출 없이 skipped로 기록
-function skippedResultFor(payload: AiPredictionEvidencePayload): AiPredictionResult {
-  return {
-    status: "skipped",
-    branchName: payload.branch.name,
-    baseBranch: payload.branch.baseBranch,
-    reason: "below_threshold"
-  }
 }
 
 // provider 호출과 schema 검증 실패를 branch 단위 failed 결과로 격리
