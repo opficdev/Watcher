@@ -7,6 +7,11 @@ export function watcherRuntimeDescription(): string {
 export { collectBranchContexts } from "./branches/branchCollector.js"
 export { selectWatchedBranches } from "./branches/branchSelector.js"
 export { buildAiPredictionEvidencePayload } from "./ai/evidenceBuilder.js"
+export {
+  DEFAULT_GEMINI_PREDICTION_MODEL,
+  GEMINI_API_KEY_ENV_NAME,
+  GeminiPredictionClient
+} from "./ai/geminiPredictionClient.js"
 export { buildAiPredictionPrompt } from "./ai/predictionPromptBuilder.js"
 export { DEFAULT_AI_PREDICTION_SYSTEM_PROMPT } from "./ai/promptTemplates.js"
 export { predictMergeRisksWithAi } from "./ai/predictionRunner.js"
@@ -19,6 +24,10 @@ export { collectGitMergeSignal } from "./git/gitMergeSignalCollector.js"
 export { analyzeBranchMergeRisks } from "./risks/riskAnalyzer.js"
 
 export type { BranchSource } from "./branches/branchCollector.js"
+
+export type {
+  GeminiPredictionClientOptions
+} from "./ai/geminiPredictionClient.js"
 
 export type {
   AiPrediction,
