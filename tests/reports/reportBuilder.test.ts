@@ -47,6 +47,19 @@ test("sorts report items by score and branch name", () => {
   ])
 })
 
+// 같은 score의 branch 이름은 locale 영향을 받지 않는 문자열 비교 순서로 정렬하는지 확인
+test("sorts tied report items with deterministic string order", () => {
+  const report = buildMergeRiskReport([
+    input("feature/ä", BranchRiskStatus.High, 70),
+    input("feature/z", BranchRiskStatus.High, 70)
+  ], "main")
+
+  assert.deepEqual(report.sections[0]?.items.map(item => item.branchName), [
+    "feature/z",
+    "feature/ä"
+  ])
+})
+
 // 비어 있는 status section은 report에서 제외되는지 확인
 test("omits empty report sections", () => {
   const report = buildMergeRiskReport([

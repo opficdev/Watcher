@@ -92,5 +92,13 @@ function compareReportItems(
     return other.score - item.score
   }
 
-  return item.branchName.localeCompare(other.branchName)
+  if (item.branchName < other.branchName) {
+    return -1
+  }
+
+  if (item.branchName > other.branchName) {
+    return 1
+  }
+
+  return 0
 }
