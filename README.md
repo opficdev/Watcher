@@ -18,7 +18,7 @@ consumer repository에는 다음 secret을 설정합니다.
 | --- | --- | --- |
 | `WATCHER_GITHUB_TOKEN` | 필수 | watched repository checkout, branch fetch, PR/check metadata 조회 |
 | `GEMINI_API_KEY` | 필수 | Gemini prediction 생성 |
-| `DISCORD_WEBHOOK_URL` | 선택 | Discord webhook report 전송 |
+| `DISCORD_WEBHOOK_URL` | 선택 | Discord webhook report 전송. 미설정 시 stdout으로 출력 |
 
 `WATCHER_GITHUB_TOKEN`은 watched repository를 checkout하고 branch, check, pull request metadata를 읽을 수 있어야 합니다. public repository라도 metadata 조회와 private repository 확장을 고려해 explicit token을 사용합니다.
 
