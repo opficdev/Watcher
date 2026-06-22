@@ -14,6 +14,31 @@ Merge risk report는 report channel을 통해 출력됩니다. consumer reposito
 
 Discord webhook으로 전송할 때는 Discord message length 제한에 맞춰 긴 report를 여러 메시지로 나눕니다. 전송 실패가 발생해도 webhook URL secret이 error message에 그대로 노출되지 않도록 처리합니다.
 
+## Reusable Workflow
+
+consumer repository는 workflow 파일 하나만 추가해 Watcher를 호출할 수 있습니다.
+
+예시는 `docs/examples/consumer-merge-risk-watch.yml`에 있습니다. 이 예시는 `pull_request`, `schedule`, `workflow_dispatch`에서 reusable workflow를 호출하며 일반 branch push만으로는 실행되지 않습니다.
+
+consumer repository에는 다음 secret을 설정해야 합니다.
+
+| secret | 필수 여부 | 용도 |
+| --- | --- | --- |
+| `WATCHER_GITHUB_TOKEN` | 필수 | watched repository checkout, branch fetch, PR/check metadata 조회 |
+| `GEMINI_API_KEY` | 필수 | Gemini prediction 생성 |
+| `DISCORD_WEBHOOK_URL` | 선택 | Discord webhook report 전송 |
+
+consumer workflow에는 다음 permission이 필요합니다.
+
+| permission | 용도 |
+| --- | --- |
+| `contents: read` | repository checkout과 branch fetch |
+| `actions: read` | workflow 실행 context 조회 |
+| `checks: read` | branch check metadata 조회 |
+| `pull-requests: read` | commit에 연결된 PR metadata 조회 |
+
+Watcher는 merge된 branch를 직접 삭제하지 않습니다. 감시 대상 branch 정리는 GitHub의 `Automatically delete head branches` 설정에 위임합니다.
+
 ## 충돌 가능성 판단 방식
 
 Watcher는 merge 가능/불가능을 단정하지 않고 branch별 signal을 점수와 reason으로 변환합니다.

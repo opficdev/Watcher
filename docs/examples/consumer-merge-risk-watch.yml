@@ -1,0 +1,34 @@
+name: Merge Risk Watch
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  schedule:
+    - cron: "0 0 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  checks: read
+  pull-requests: read
+
+jobs:
+  watch:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+    uses: opficdev/Watcher/.github/workflows/merge-risk-watch.yml@develop
+    with:
+      repository: ${{ github.repository }}
+      base_branch: develop
+      default_branch: main
+      critical_file_patterns: |
+        package-lock.json
+        .github/workflows/**
+    secrets:
+      watcher_github_token: ${{ secrets.WATCHER_GITHUB_TOKEN }}
+      gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+      discord_webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
