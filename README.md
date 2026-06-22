@@ -144,10 +144,49 @@ Merge risk report는 Markdown으로 생성됩니다. consumer repository에 `DIS
 
 Discord webhook으로 전송할 때는 Discord message length 제한에 맞춰 긴 report를 여러 메시지로 나눕니다. 전송 실패가 발생해도 webhook URL secret이 error message에 그대로 노출되지 않도록 처리합니다.
 
-## 검증
+## Local development
+
+local 개발에서는 Node 22를 사용합니다.
 
 ```sh
 npm ci
 npm run build
 npm test
 ```
+
+`npm test`는 compiled JavaScript test를 실행합니다. 테스트는 provider와 report channel을 mock으로 검증하므로 실제 GitHub, Gemini, Discord 호출을 수행하지 않습니다.
+
+실제 runner를 local에서 실행하려면 watched repository checkout과 secret 환경 변수가 필요합니다. 이 실행은 GitHub API, Gemini API, Discord webhook을 호출할 수 있으므로 필요한 경우에만 사용합니다.
+
+```sh
+WATCHER_REPOSITORY=owner/repo \
+WATCHER_REPOSITORY_PATH=/path/to/watched-repository \
+WATCHER_BASE_BRANCH=develop \
+WATCHER_DEFAULT_BRANCH=main \
+WATCHER_CRITICAL_FILE_PATTERNS='package-lock.json
+.github/workflows/**' \
+GITHUB_TOKEN=github-token \
+GEMINI_API_KEY=gemini-api-key \
+DISCORD_WEBHOOK_URL=discord-webhook-url \
+npm run watch
+```
+
+## Local test와 scheduled run 차이
+
+local test는 Watcher 내부 로직이 기대한 입력을 처리하는지 확인합니다. GitHub Actions의 reusable workflow, repository checkout, remote branch fetch, 실제 API 권한, schedule timing은 검증하지 않습니다.
+
+scheduled run은 consumer repository의 실제 remote branch를 fetch하고, `base_branch`와 `default_branch`를 제외한 branch를 대상으로 merge signal과 metadata를 다시 수집합니다. 따라서 local test가 통과해도 consumer repository의 token permission, branch 정리 상태, Gemini API key, Discord webhook 상태가 잘못되면 scheduled run에서 실패할 수 있습니다.
+
+## Troubleshooting
+
+| 증상 | 확인할 항목 |
+| --- | --- |
+| workflow가 시작되지 않음 | consumer workflow가 `pull_request`, `schedule`, `workflow_dispatch` 중 필요한 trigger를 가지고 있는지 확인 |
+| fork PR에서 실행되지 않음 | 예시 workflow의 `github.event.pull_request.head.repo.fork == false` 조건 확인 |
+| checkout 또는 fetch 실패 | `WATCHER_GITHUB_TOKEN` 권한과 `contents: read` permission 확인 |
+| PR metadata가 비어 있음 | `pull-requests: read` permission과 commit에 연결된 PR 존재 여부 확인 |
+| check metadata가 비어 있음 | `checks: read` permission과 해당 branch head SHA의 check run 존재 여부 확인 |
+| AI prediction이 `skipped`로 표시됨 | deterministic possibility score가 기본 threshold인 25점 미만인지 확인 |
+| AI prediction이 `failed`로 표시됨 | `GEMINI_API_KEY` secret과 Gemini API 응답 형식 확인 |
+| Discord 전송이 되지 않음 | `DISCORD_WEBHOOK_URL` secret과 webhook channel 권한 확인 |
+| merge된 branch가 계속 감시됨 | GitHub `Automatically delete head branches` 설정과 원격 branch 삭제 상태 확인 |
