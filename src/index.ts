@@ -69,3 +69,11 @@ export type {
   BranchRiskReasonCode,
   BranchRiskStatus
 } from "./risks/types.js"
+
+export type {
+  MergeRiskReport,
+  MergeRiskReportInput,
+  MergeRiskReportItem,
+  MergeRiskReportOptions,
+  MergeRiskReportSection
+} from "./reports/types.js"
