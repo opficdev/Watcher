@@ -15,23 +15,19 @@ export async function predictMergeRisksWithAi(
   options: AiPredictionRunOptions = {}
 ): Promise<AiPredictionResult[]> {
   const targets = new Set(selectAiPredictionTargets(payloads, options))
-  const results: AiPredictionResult[] = []
 
-  for (const payload of payloads) {
+  return Promise.all(payloads.map(async (payload): Promise<AiPredictionResult> => {
     if (!targets.has(payload)) {
-      results.push({
+      return {
         status: "skipped",
         branchName: payload.branch.name,
         baseBranch: payload.branch.baseBranch,
         reason: "below_threshold"
-      })
-      continue
+      }
     }
 
-    results.push(await predictedResultFor(payload, client, options))
-  }
-
-  return results
+    return predictedResultFor(payload, client, options)
+  }))
 }
 
 // provider 호출과 schema 검증 실패를 branch 단위 failed 결과로 격리

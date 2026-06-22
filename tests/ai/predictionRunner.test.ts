@@ -46,6 +46,22 @@ test("uses custom prediction threshold", async () => {
   )
 })
 
+// 선택된 branch prediction들이 서로 기다리지 않고 병렬로 시작되는지 확인
+test("starts selected predictions in parallel", async () => {
+  const client = new DeferredAiPredictionClient()
+  const running = predictMergeRisksWithAi([
+    payload("feature/a", 55),
+    payload("feature/b", 80)
+  ], client)
+
+  await client.waitForPrompts(2)
+  assert.equal(client.prompts.length, 2)
+
+  client.resolveAll()
+  const results = await running
+  assert.deepEqual(results.map(result => result.status), ["predicted", "predicted"])
+})
+
 // AI client 오류가 전체 실행 실패가 아니라 branch 단위 failed 결과로 기록되는지 확인
 test("records failed result when client throws", async () => {
   const client = new AiPredictionClientSpy(new Error("provider failed"))
@@ -100,6 +116,38 @@ class AiPredictionClientSpy implements AiPredictionClient {
     }
 
     return this.response ?? validResponse(branchNameFrom(prompt))
+  }
+}
+
+class DeferredAiPredictionClient implements AiPredictionClient {
+  prompts: AiPredictionPrompt[] = []
+  private promptWaiters: Array<() => void> = []
+  private pending: Array<{
+    prompt: AiPredictionPrompt
+    resolve: (value: unknown) => void
+  }> = []
+
+  async predict(prompt: AiPredictionPrompt): Promise<unknown> {
+    this.prompts.push(prompt)
+    this.promptWaiters.splice(0).forEach(resolve => resolve())
+
+    return new Promise(resolve => {
+      this.pending.push({ prompt, resolve })
+    })
+  }
+
+  async waitForPrompts(count: number): Promise<void> {
+    while (this.prompts.length < count) {
+      await new Promise<void>(resolve => {
+        this.promptWaiters.push(resolve)
+      })
+    }
+  }
+
+  resolveAll(): void {
+    for (const pending of this.pending.splice(0)) {
+      pending.resolve(validResponse(branchNameFrom(pending.prompt)))
+    }
   }
 }
 
