@@ -81,6 +81,13 @@ export class GeminiPredictionClient implements AiPredictionClient {
   }
 }
 
+// Watcher 기본 AI provider를 Gemini client로 조립
+export function createDefaultAiPredictionClient(
+  options: GeminiPredictionClientOptions = {}
+): AiPredictionClient {
+  return new GeminiPredictionClient(options)
+}
+
 // Watcher가 검증할 AiPrediction shape를 Gemini structured output schema로 전달
 function geminiRequestBodyFor(prompt: AiPredictionPrompt): Record<string, unknown> {
   return {

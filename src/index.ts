@@ -8,6 +8,7 @@ export { collectBranchContexts } from "./branches/branchCollector.js"
 export { selectWatchedBranches } from "./branches/branchSelector.js"
 export { buildAiPredictionEvidencePayload } from "./ai/evidenceBuilder.js"
 export {
+  createDefaultAiPredictionClient,
   DEFAULT_GEMINI_PREDICTION_MODEL,
   GEMINI_API_KEY_ENV_NAME,
   GeminiPredictionClient

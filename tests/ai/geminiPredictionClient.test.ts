@@ -1,6 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import {
+  createDefaultAiPredictionClient,
   DEFAULT_GEMINI_PREDICTION_MODEL,
   GEMINI_API_KEY_ENV_NAME,
   GeminiPredictionClient,
@@ -26,6 +27,18 @@ test("requires Gemini API key", () => {
       process.env[GEMINI_API_KEY_ENV_NAME] = originalApiKey
     }
   }
+})
+
+// Watcher 기본 AI provider factory가 Gemini client를 반환하는지 확인
+test("creates Gemini client as default AI prediction client", async () => {
+  const client = createDefaultAiPredictionClient({
+    apiKey: "gemini-key",
+    fetch: fetchSpy(validGeminiResponse())
+  })
+
+  const response = await client.predict(prompt())
+
+  assert.deepEqual(response, validPrediction())
 })
 
 // Watcher prompt가 Gemini generateContent REST payload로 변환되는지 확인
