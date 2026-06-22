@@ -1,32 +1,65 @@
 # Watcher
 
-Watcher는 branch 단위로 merge conflict 가능성 분석에 필요한 정보를 수집하는 TypeScript/Node 자동화 도구입니다.
+Watcher는 consumer repository의 active branch를 감시하고 merge conflict 가능성을 report하는 TypeScript/Node 자동화 도구입니다.
 
-## 사용법
+consumer repository는 Watcher 코드를 복사하지 않고 workflow 파일 하나만 추가해 reusable workflow를 호출합니다. Watcher repository는 reusable workflow, deterministic possibility 계산, AI prediction, report channel 구현을 소유합니다.
 
-Watcher는 기준이 되는 `baseBranch`와 `defaultBranch`를 제외한 모든 branch를 감시 대상으로 수집합니다.
+## 설치
 
-GitHub repository의 `Settings` > `General` > `Pull Requests`에서 `Automatically delete head branches` 옵션을 반드시 켜야 합니다. 이 옵션을 켜면 merge된 branch가 자동으로 삭제되어 Watcher가 이미 merge된 branch까지 계속 감시하는 상황을 줄일 수 있습니다.
+consumer repository에 workflow 파일을 추가합니다.
 
-AI prediction은 기본 provider로 Gemini API를 사용합니다. consumer repository에는 `GEMINI_API_KEY` secret을 설정해야 하며 Watcher는 deterministic evidence를 Gemini에 전달해 prediction과 recommended actions를 생성합니다.
+```yml
+name: Merge Risk Watch
 
-Merge risk report는 report channel을 통해 출력됩니다. consumer repository에 `DISCORD_WEBHOOK_URL` secret이 있으면 Discord webhook으로 report를 전송합니다. `DISCORD_WEBHOOK_URL`이 없으면 같은 Markdown report를 stdout으로 출력하므로 local 실행이나 CI log에서 결과를 확인할 수 있습니다.
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  schedule:
+    - cron: "0 0 * * 1-5"
+  workflow_dispatch:
 
-Discord webhook으로 전송할 때는 Discord message length 제한에 맞춰 긴 report를 여러 메시지로 나눕니다. 전송 실패가 발생해도 webhook URL secret이 error message에 그대로 노출되지 않도록 처리합니다.
+permissions:
+  contents: read
+  actions: read
+  checks: read
+  pull-requests: read
 
-## Reusable Workflow
+jobs:
+  watch:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+    uses: opficdev/Watcher/.github/workflows/merge-risk-watch.yml@develop
+    with:
+      repository: ${{ github.repository }}
+      base_branch: develop
+      default_branch: main
+      critical_file_patterns: |
+        package-lock.json
+        .github/workflows/**
+    secrets:
+      watcher_github_token: ${{ secrets.WATCHER_GITHUB_TOKEN }}
+      gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+      discord_webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+```
 
-consumer repository는 workflow 파일 하나만 추가해 Watcher를 호출할 수 있습니다.
+같은 예시는 `docs/examples/consumer-merge-risk-watch.yml`에도 있습니다.
 
-예시는 `docs/examples/consumer-merge-risk-watch.yml`에 있습니다. 이 예시는 `pull_request`, `schedule`, `workflow_dispatch`에서 reusable workflow를 호출하며 일반 branch push만으로는 실행되지 않습니다.
+## Secrets
 
-consumer repository에는 다음 secret을 설정해야 합니다.
+consumer repository에는 다음 secret을 설정합니다.
 
 | secret | 필수 여부 | 용도 |
 | --- | --- | --- |
 | `WATCHER_GITHUB_TOKEN` | 필수 | watched repository checkout, branch fetch, PR/check metadata 조회 |
 | `GEMINI_API_KEY` | 필수 | Gemini prediction 생성 |
 | `DISCORD_WEBHOOK_URL` | 선택 | Discord webhook report 전송 |
+
+`WATCHER_GITHUB_TOKEN`은 watched repository를 checkout하고 branch, check, pull request metadata를 읽을 수 있어야 합니다. public repository라도 metadata 조회와 private repository 확장을 고려해 explicit token을 사용합니다.
+
+## Permissions
 
 consumer workflow에는 다음 permission이 필요합니다.
 
@@ -37,7 +70,26 @@ consumer workflow에는 다음 permission이 필요합니다.
 | `checks: read` | branch check metadata 조회 |
 | `pull-requests: read` | commit에 연결된 PR metadata 조회 |
 
-Watcher는 merge된 branch를 직접 삭제하지 않습니다. 감시 대상 branch 정리는 GitHub의 `Automatically delete head branches` 설정에 위임합니다.
+## Inputs
+
+reusable workflow는 다음 input을 받습니다.
+
+| input | 필수 여부 | 기본값 | 용도 |
+| --- | --- | --- | --- |
+| `repository` | 필수 | 없음 | 감시할 repository. `owner/repo` 형식 |
+| `base_branch` | 필수 | 없음 | merge risk를 비교할 기준 branch |
+| `default_branch` | 선택 | 빈 값 | 감시 대상에서 제외할 default branch |
+| `critical_file_patterns` | 선택 | 빈 값 | score에 반영할 critical file wildcard pattern 목록. 줄바꿈으로 구분 |
+
+`critical_file_patterns`에서 `*`는 단일 path segment 내부를 매칭하고 `**`는 path separator를 포함해 매칭합니다.
+
+## Branch 운영 기준
+
+Watcher는 `base_branch`와 `default_branch`를 제외한 remote branch를 감시 대상으로 수집합니다. branch 이름에 맞춰야 하는 prefix나 regex는 요구하지 않습니다.
+
+Watcher는 merge된 branch를 직접 삭제하지 않습니다. consumer repository의 `Settings` > `General` > `Pull Requests`에서 `Automatically delete head branches` 옵션을 켜야 합니다. 이 옵션을 켜면 merge된 branch가 자동으로 삭제되어 이미 merge된 branch를 계속 감시하는 상황을 줄일 수 있습니다.
+
+예시 workflow는 `pull_request`, `schedule`, `workflow_dispatch`에서 실행됩니다. 일반 branch push만으로는 실행되지 않으며 PR 업데이트와 scheduled run에서 active branch 상태를 다시 확인합니다.
 
 ## 충돌 가능성 판단 방식
 
