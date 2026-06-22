@@ -91,12 +91,11 @@ Watcher는 merge된 branch를 직접 삭제하지 않습니다. consumer reposit
 
 예시 workflow는 `pull_request`, `schedule`, `workflow_dispatch`에서 실행됩니다. 일반 branch push만으로는 실행되지 않으며 PR 업데이트와 scheduled run에서 active branch 상태를 다시 확인합니다.
 
-## 충돌 가능성 판단 방식
+## Deterministic possibility
 
-Watcher는 merge 가능/불가능을 단정하지 않고 branch별 signal을 점수와 reason으로 변환합니다.
+Watcher는 merge 가능/불가능을 단정하지 않고 branch별 signal을 deterministic possibility score와 reason으로 변환합니다. 이 값은 같은 입력에 대해 항상 같은 결과가 나와야 하는 기본 판단층입니다.
 
-기본 입력은 branch metadata, git merge signal, 변경 파일, 변경 범위입니다. 변경 범위는 같은 파일 안에서 수정된 line range를 뜻하며 여러 branch가 같은 line range를 수정할수록 conflict 가능성을 높게 봅니다.
-Git diff에서는 이런 변경 범위를 hunk라고 부르며 Watcher는 같은 파일의 hunk line range가 겹치는지를 비교합니다.
+기본 입력은 branch metadata, git merge signal, 변경 파일, 변경 범위입니다. 변경 범위는 같은 파일 안에서 수정된 line range를 뜻하며 여러 branch가 같은 line range를 수정할수록 conflict 가능성을 높게 봅니다. Git diff에서는 이런 변경 범위를 hunk라고 부르며 Watcher는 같은 파일의 hunk line range가 겹치는지를 비교합니다.
 
 | signal | score | 의미 |
 | --- | ---: | --- |
@@ -118,6 +117,32 @@ Git diff에서는 이런 변경 범위를 hunk라고 부르며 Watcher는 같은
 | 80-100 | `critical` |
 
 `confirmed_conflict`는 최상위 signal입니다. 이 signal이 있으면 다른 reason을 추가로 합산하지 않고 `critical` risk로 처리합니다.
+
+각 reason은 report에 code, message, score impact, 관련 file, 관련 branch, 관련 check metadata로 표시됩니다. 이 정보가 AI prediction에 전달되는 정제된 evidence입니다.
+
+## AI-assisted prediction
+
+AI prediction은 deterministic possibility score를 대체하지 않습니다. Watcher는 deterministic evidence를 Gemini API에 전달하고 AI는 실무 관점의 prediction, confidence, recommended actions, false positive notes를 추가합니다.
+
+기본 AI provider는 Gemini API입니다. consumer repository에는 `GEMINI_API_KEY` secret을 설정해야 합니다.
+
+AI prediction 대상은 기본적으로 `medium` 이상 possibility입니다. 현재 기준으로 score가 25점 이상인 branch만 AI prediction 대상으로 선택됩니다. 낮은 score의 branch는 AI 호출을 생략하고 `skipped` 상태로 report에 표시됩니다.
+
+AI prediction 결과는 다음 상태 중 하나입니다.
+
+| status | 의미 |
+| --- | --- |
+| `predicted` | Gemini API 응답을 검증했고 prediction과 recommended actions를 report에 포함함 |
+| `skipped` | deterministic possibility score가 threshold보다 낮아 AI 호출을 생략함 |
+| `failed` | provider 호출이나 응답 검증에 실패해 branch 단위 실패로 격리함 |
+
+AI provider가 실패해도 deterministic possibility report는 유지됩니다. 실패한 branch는 `failed` 상태와 error message를 report에 포함합니다.
+
+## Report channel
+
+Merge risk report는 Markdown으로 생성됩니다. consumer repository에 `DISCORD_WEBHOOK_URL` secret이 있으면 Discord webhook으로 전송하고, 없으면 stdout으로 출력합니다.
+
+Discord webhook으로 전송할 때는 Discord message length 제한에 맞춰 긴 report를 여러 메시지로 나눕니다. 전송 실패가 발생해도 webhook URL secret이 error message에 그대로 노출되지 않도록 처리합니다.
 
 ## 검증
 
