@@ -12,6 +12,13 @@ export { analyzeBranchMergeRisks } from "./risks/riskAnalyzer.js"
 export type { BranchSource } from "./branches/branchCollector.js"
 
 export type {
+  AiPrediction,
+  AiPredictionEvidencePayload,
+  AiRecommendedAction,
+  AiRecommendedActionPriority
+} from "./ai/types.js"
+
+export type {
   BranchContext,
   BranchCheckMetadata,
   BranchPullRequestMetadata,
