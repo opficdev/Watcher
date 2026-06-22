@@ -31,6 +31,15 @@ test("formats branch metadata and pull request link", () => {
   )
 })
 
+// Pull Request 제목의 대괄호가 Markdown link text를 깨지 않도록 escape되는지 확인
+test("escapes pull request title brackets", () => {
+  const markdown = formatMergeRiskReportMarkdown(report(undefined, {
+    pullRequestTitle: "[Report] item"
+  }))
+
+  assert.match(markdown, /- pull request: \[#12 \\\[Report\\\] item\]\(https:\/\/github.com\/opficdev\/Watcher\/pull\/12\)/)
+})
+
 // deterministic reason의 관련 파일, branch, check metadata가 표시되는지 확인
 test("formats deterministic reason metadata", () => {
   const markdown = formatMergeRiskReportMarkdown(report())
@@ -96,7 +105,16 @@ test("formats empty report", () => {
   assert.match(markdown, /감시 대상 branch 없음/)
 })
 
-function report(aiPrediction?: AiPredictionResult): MergeRiskReport {
+function report(
+  aiPrediction?: AiPredictionResult,
+  options: {
+    branchName?: string
+    pullRequestTitle?: string
+    reasonFile?: string
+  } = {}
+): MergeRiskReport {
+  const branchName = options.branchName ?? "feature/risk"
+
   return {
     baseBranch: "main",
     generatedAt: new Date("2026-06-22T00:00:00.000Z"),
@@ -113,7 +131,7 @@ function report(aiPrediction?: AiPredictionResult): MergeRiskReport {
         updatedAt: new Date("2026-06-22T01:00:00.000Z"),
         pullRequest: {
           number: 12,
-          title: "Report item",
+          title: options.pullRequestTitle ?? "Report item",
           url: "https://github.com/opficdev/Watcher/pull/12",
           author: "opfic"
         },

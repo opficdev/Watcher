@@ -62,7 +62,8 @@ function metadataLinesFor(item: MergeRiskReportItem): string[] {
   }
 
   if (item.pullRequest) {
-    lines.push(`- pull request: [#${item.pullRequest.number} ${item.pullRequest.title}](${item.pullRequest.url})`)
+    const title = escapeLinkText(item.pullRequest.title)
+    lines.push(`- pull request: [#${item.pullRequest.number} ${title}](${item.pullRequest.url})`)
   }
 
   return lines
@@ -156,6 +157,11 @@ function actionLinesFor(action: AiRecommendedAction): string[] {
   }
 
   return lines
+}
+
+// Markdown link text 안의 대괄호가 링크 경계를 깨지 않도록 escape
+function escapeLinkText(value: string): string {
+  return value.replaceAll("[", "\\[").replaceAll("]", "\\]")
 }
 
 // Markdown inline code 안에서 backtick이 문법을 깨지 않도록 escape
