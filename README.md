@@ -136,6 +136,42 @@ DISCORD_WEBHOOK_URL=discord-webhook-url \
 npm run watch
 ```
 
+## 실서비스 연결 전 테스트
+
+consumer repository에 scheduled run과 Discord webhook을 붙이기 전에 다음 순서로 확인합니다.
+
+1. Watcher repository에서 local 검증을 먼저 실행합니다.
+
+```sh
+npm ci
+npm run build
+npm test
+```
+
+2. Watcher repository의 `docs/examples/consumer-merge-risk-watch.yml` 예시를 consumer repository의 workflow 파일로 추가합니다.
+
+| 설정 | 테스트 값 |
+| --- | --- |
+| `base_branch` | 기준 branch. 예: `develop` |
+| `default_branch` | 제외할 default branch. 예: `main` |
+| `critical_file_patterns` | 테스트할 critical file pattern. 예: `package-lock.json`, `.github/workflows/**` |
+
+3. consumer repository secret을 설정합니다.
+
+| secret | 테스트 기준 |
+| --- | --- |
+| `WATCHER_GITHUB_TOKEN` | 테스트 repository를 checkout하고 metadata를 읽을 수 있는 token |
+| `GEMINI_API_KEY` | Gemini API 호출 가능한 key |
+| `DISCORD_WEBHOOK_URL` | 처음에는 설정하지 않음 |
+
+4. consumer repository의 Actions 화면에서 `Merge Risk Watch` workflow를 수동 실행하고 stdout report를 확인합니다.
+
+`DISCORD_WEBHOOK_URL`을 비워 두면 Discord로 전송하지 않고 GitHub Actions log에 Markdown report를 출력합니다. 이 단계에서 branch 수집, merge signal 수집, Gemini prediction, report 생성이 정상인지 확인합니다.
+
+5. stdout report가 정상일 때만 consumer repository secret에 `DISCORD_WEBHOOK_URL`을 추가하고 같은 workflow를 다시 수동 실행합니다.
+
+Discord 메시지가 정상적으로 도착하면 consumer repository의 예시 workflow에 `schedule`과 `pull_request` trigger를 유지해 실서비스 실행으로 전환합니다.
+
 ## Local test와 scheduled run 차이
 
 local test는 Watcher 내부 로직이 기대한 입력을 처리하는지 확인합니다. GitHub Actions의 reusable workflow, repository checkout, remote branch fetch, 실제 API 권한, schedule timing은 검증하지 않습니다.
