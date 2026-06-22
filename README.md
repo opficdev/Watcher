@@ -45,6 +45,7 @@ reusable workflow는 다음 input을 받습니다.
 | `base_branch` | 필수 | 없음 | merge risk를 비교할 기준 branch |
 | `default_branch` | 선택 | 빈 값 | 감시 대상에서 제외할 default branch |
 | `critical_file_patterns` | 선택 | 빈 값 | score에 반영할 critical file wildcard pattern 목록. 줄바꿈으로 구분 |
+| `watcher_version` | 선택 | 빈 값 | 수동 테스트에 사용할 Watcher release tag. 비워두면 workflow ref 기준 |
 
 `critical_file_patterns`에서 `*`는 단일 path segment 내부를 매칭하고 `**`는 path separator를 포함해 매칭합니다.
 
@@ -54,9 +55,9 @@ Watcher는 `base_branch`와 `default_branch`를 제외한 remote branch를 감�
 
 Watcher는 merge된 branch를 직접 삭제하지 않습니다. consumer repository의 `Settings` > `General` > `Pull Requests`에서 `Automatically delete head branches` 옵션을 켜야 합니다. 이 옵션을 켜면 merge된 branch가 자동으로 삭제되어 이미 merge된 branch를 계속 감시하는 상황을 줄일 수 있습니다.
 
-예시 workflow는 `pull_request`, `schedule`, `workflow_dispatch`에서 실행됩니다. 일반 branch push만으로는 실행되지 않으며 PR 업데이트와 scheduled run에서 active branch 상태를 다시 확인합니다.
+예시 workflow는 `schedule`, `workflow_dispatch`에서 실행됩니다. 일반 branch push나 PR 생성만으로는 실행되지 않으며 scheduled run에서 active branch 상태를 다시 확인합니다.
 
-consumer repository의 예시 workflow는 `workflow_dispatch`를 지원하므로 Actions 화면에서 수동 테스트 실행이 가능합니다.
+consumer repository의 예시 workflow는 `workflow_dispatch`를 지원하므로 Actions 화면에서 수동 테스트 실행이 가능합니다. `watcher_version`을 비워두면 `uses` ref 기준 release asset을 사용하고 특정 release tag를 입력하면 해당 version으로 테스트합니다.
 
 ## Release 배포
 
@@ -169,6 +170,7 @@ npm test
 | --- | --- |
 | `base_branch` | 기준 branch. 예: `develop` |
 | `default_branch` | 제외할 default branch. 예: `main` |
+| `watcher_version` | 테스트할 Watcher release tag. 비워두면 workflow ref 기준 |
 | `critical_file_patterns` | 테스트할 critical file pattern. 예: `package-lock.json`, `.github/workflows/**` |
 
 3. consumer repository secret을 설정합니다.
