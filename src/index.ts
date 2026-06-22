@@ -22,6 +22,7 @@ export {
 } from "./ai/predictionTargetSelector.js"
 export { validate as validateAiPredictionResponse } from "./ai/predictionResponseValidator.js"
 export { collectGitMergeSignal } from "./git/gitMergeSignalCollector.js"
+export { send as sendMergeRiskReport } from "./reportChannels/reportChannel.js"
 export { analyze as analyzeBranchMergeRisks } from "./risks/riskAnalyzer.js"
 export { build as buildMergeRiskReport } from "./reports/reportBuilder.js"
 export { format as formatMergeRiskReportMarkdown } from "./reports/markdownFormatter.js"
@@ -56,6 +57,19 @@ export type {
   BranchSelectionOptions,
   RepositoryBranch
 } from "./branches/types.js"
+
+export type {
+  ReportChannelFailure,
+  ReportChannelInput,
+  ReportChannelOptions,
+  ReportChannelResult,
+  ReportChannelSuccess,
+  ReportChannelTarget
+} from "./reportChannels/types.js"
+
+export {
+  DISCORD_WEBHOOK_URL_ENV_NAME
+} from "./reportChannels/types.js"
 
 export type {
   GitMergeSignal,
