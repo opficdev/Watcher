@@ -2,11 +2,14 @@ import type { BranchContext } from "../branches/types.js"
 import type { GitMergeSignal } from "../git/types.js"
 
 // report와 후속 action 추천에서 사용할 branch risk 단계
-export type BranchRiskStatus =
-  | "low"
-  | "medium"
-  | "high"
-  | "critical"
+export const BranchRiskStatus = {
+  Low: "low",
+  Medium: "medium",
+  High: "high",
+  Critical: "critical"
+} as const
+
+export type BranchRiskStatus = typeof BranchRiskStatus[keyof typeof BranchRiskStatus]
 
 // risk reason을 deterministic하게 분류하기 위한 rule code
 export type BranchRiskReasonCode =
