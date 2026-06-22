@@ -3,6 +3,9 @@ import type {
   AiPredictionPrompt
 } from "./types.js"
 
+// workflow log가 과도하게 커지지 않도록 Gemini 실패 응답 본문을 제한
+const MAX_GEMINI_ERROR_DETAIL_LENGTH = 1000
+
 // Watcher가 Gemini prediction에 기본으로 사용할 model 이름
 export const DEFAULT_GEMINI_PREDICTION_MODEL = "gemini-3.5-flash"
 
@@ -122,6 +125,10 @@ async function geminiErrorDetailFor(response: Response): Promise<string | undefi
   try {
     const text = await response.text()
     const trimmed = text.trim()
+
+    if (MAX_GEMINI_ERROR_DETAIL_LENGTH < trimmed.length) {
+      return trimmed.slice(0, MAX_GEMINI_ERROR_DETAIL_LENGTH) + "... (1000자 제한)"
+    }
 
     return trimmed || undefined
   } catch {

@@ -117,6 +117,23 @@ test("throws when Gemini request fails", async () => {
   )
 })
 
+// Gemini HTTP 실패 응답이 너무 길면 workflow log를 보호하기 위해 일부만 노출하는지 확인
+test("truncates long Gemini error response", async () => {
+  const client = new GeminiPredictionClient({
+    apiKey: "gemini-key",
+    fetch: fetchSpy({}, {
+      ok: false,
+      status: 400,
+      text: "x".repeat(1200)
+    })
+  })
+
+  await assert.rejects(
+    client.predict(prompt()),
+    /Gemini prediction request failed with status 400: x{1000}\.\.\. \(truncated\)/
+  )
+})
+
 // Gemini 응답에 JSON text가 없으면 schema validation 이전에 명확한 오류가 발생하는지 확인
 test("throws when Gemini response text is empty", async () => {
   const client = new GeminiPredictionClient({
