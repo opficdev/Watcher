@@ -26,6 +26,43 @@ export type AiPredictionPromptBuildOptions = {
   systemPrompt?: string
 }
 
+// provider별 AI 호출 구현이 맞춰야 하는 최소 interface
+export type AiPredictionClient = {
+  predict(prompt: AiPredictionPrompt): Promise<unknown>
+}
+
+// AI prediction runner가 대상 선택과 prompt 생성을 조정하기 위한 설정
+export type AiPredictionRunOptions =
+  AiPredictionTargetSelectionOptions &
+  AiPredictionPromptBuildOptions
+
+// branch별 AI prediction 실행 결과
+export type AiPredictionResult =
+  | AiPredictionPredictedResult
+  | AiPredictionSkippedResult
+  | AiPredictionFailedResult
+
+export type AiPredictionPredictedResult = {
+  status: "predicted"
+  branchName: string
+  baseBranch: string
+  prediction: AiPrediction
+}
+
+export type AiPredictionSkippedResult = {
+  status: "skipped"
+  branchName: string
+  baseBranch: string
+  reason: "below_threshold"
+}
+
+export type AiPredictionFailedResult = {
+  status: "failed"
+  branchName: string
+  baseBranch: string
+  errorMessage: string
+}
+
 // AI가 deterministic possibility를 덮어쓰지 않고 추가로 제공하는 예측 결과
 export type AiPrediction = {
   branchName: string

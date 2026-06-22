@@ -9,6 +9,7 @@ export { selectWatchedBranches } from "./branches/branchSelector.js"
 export { buildAiPredictionEvidencePayload } from "./ai/evidenceBuilder.js"
 export { buildAiPredictionPrompt } from "./ai/predictionPromptBuilder.js"
 export { DEFAULT_AI_PREDICTION_SYSTEM_PROMPT } from "./ai/promptTemplates.js"
+export { predictMergeRisksWithAi } from "./ai/predictionRunner.js"
 export {
   DEFAULT_AI_PREDICTION_MINIMUM_SCORE,
   selectAiPredictionTargets
@@ -21,9 +22,15 @@ export type { BranchSource } from "./branches/branchCollector.js"
 
 export type {
   AiPrediction,
+  AiPredictionClient,
   AiPredictionEvidencePayload,
+  AiPredictionFailedResult,
   AiPredictionPrompt,
   AiPredictionPromptBuildOptions,
+  AiPredictionPredictedResult,
+  AiPredictionResult,
+  AiPredictionRunOptions,
+  AiPredictionSkippedResult,
   AiPredictionTargetSelectionOptions,
   AiRecommendedAction,
   AiRecommendedActionPriority
