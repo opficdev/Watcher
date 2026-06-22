@@ -16,7 +16,10 @@ import type {
   BranchPullRequestMetadata,
   RepositoryBranch
 } from "../branches/types.js"
-import type { BranchChangedHunk } from "../risks/types.js"
+import type {
+  BranchChangedHunk,
+  BranchRiskAnalysisInput
+} from "../risks/types.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -93,7 +96,9 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
     baseBranch: options.baseBranch,
     defaultBranch: options.defaultBranch
   })
-  const inputs = await Promise.all(branches.map(async branch => {
+  const inputs: BranchRiskAnalysisInput[] = []
+
+  for (const branch of branches) {
     const gitSignal = await collectGitMergeSignal(branch, {
       repositoryPath: options.repositoryPath,
       remoteName: options.remoteName
@@ -107,12 +112,13 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
       })
       : []
 
-    return {
+    inputs.push({
       branch,
       gitSignal,
       changedHunks
-    }
-  }))
+    })
+  }
+
   const risks = analyzeBranchMergeRisks(inputs, {
     criticalFilePatterns: options.criticalFilePatterns
   })
