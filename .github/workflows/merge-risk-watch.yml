@@ -31,6 +31,26 @@ on:
       discord_webhook_url:
         description: "선택 사항. report를 전송할 Discord webhook URL"
         required: false
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: "감시할 repository. owner/repo 형식"
+        required: true
+        type: string
+      base_branch:
+        description: "merge risk를 비교할 기준 branch"
+        required: true
+        type: string
+      default_branch:
+        description: "감시 대상에서 제외할 default branch"
+        required: false
+        type: string
+        default: ""
+      critical_file_patterns:
+        description: "critical file wildcard pattern 목록. 줄바꿈으로 구분"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -47,7 +67,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: ${{ inputs.repository }}
-          token: ${{ secrets.watcher_github_token }}
+          token: ${{ secrets.watcher_github_token || secrets.WATCHER_GITHUB_TOKEN }}
           path: watched-repository
           ref: ${{ inputs.base_branch }}
           fetch-depth: 0
@@ -56,7 +76,26 @@ jobs:
         working-directory: watched-repository
         run: git fetch origin '+refs/heads/*:refs/remotes/origin/*' --prune
 
+      - name: Resolve Watcher source
+        id: watcher_source
+        env:
+          WATCHER_WORKFLOW_REF: ${{ job.workflow_ref }}
+        run: |
+          set -euo pipefail
+
+          workflow_ref_name="${WATCHER_WORKFLOW_REF##*@}"
+          release_tag=""
+
+          if [[ "$workflow_ref_name" == refs/tags/* ]]; then
+            release_tag="${workflow_ref_name#refs/tags/}"
+          elif [[ "$workflow_ref_name" != refs/heads/* && "$workflow_ref_name" != refs/pull/* && ! "$workflow_ref_name" =~ ^[0-9a-f]{40}$ ]]; then
+            release_tag="$workflow_ref_name"
+          fi
+
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+
       - name: Checkout Watcher
+        if: steps.watcher_source.outputs.release_tag == ''
         uses: actions/checkout@v6
         with:
           repository: ${{ job.workflow_repository }}
@@ -67,23 +106,36 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: watcher/package-lock.json
+
+      - name: Download Watcher release
+        if: steps.watcher_source.outputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WATCHER_RELEASE_TAG: ${{ steps.watcher_source.outputs.release_tag }}
+        run: |
+          mkdir -p watcher-release watcher
+          gh release download "${WATCHER_RELEASE_TAG}" \
+            --repo "${{ job.workflow_repository }}" \
+            --pattern watcher-deploy.tar.gz \
+            --dir watcher-release
+          tar -xzf watcher-release/watcher-deploy.tar.gz -C watcher
 
       - name: Install Watcher dependencies
+        if: steps.watcher_source.outputs.release_tag == ''
         working-directory: watcher
         run: npm ci
 
       - name: Build Watcher
+        if: steps.watcher_source.outputs.release_tag == ''
         working-directory: watcher
         run: npm run build
 
       - name: Run Watcher
         working-directory: watcher
         env:
-          GITHUB_TOKEN: ${{ secrets.watcher_github_token }}
-          GEMINI_API_KEY: ${{ secrets.gemini_api_key }}
-          DISCORD_WEBHOOK_URL: ${{ secrets.discord_webhook_url }}
+          GITHUB_TOKEN: ${{ secrets.watcher_github_token || secrets.WATCHER_GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.gemini_api_key || secrets.GEMINI_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.discord_webhook_url || secrets.DISCORD_WEBHOOK_URL }}
           WATCHER_REPOSITORY: ${{ inputs.repository }}
           WATCHER_GITHUB_API_URL: ${{ github.api_url }}
           WATCHER_REPOSITORY_PATH: ${{ github.workspace }}/watched-repository

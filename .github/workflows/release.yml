@@ -1,0 +1,124 @@
+name: CD
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semantic version without prefix (example: 0.1.0)"
+        required: true
+        type: string
+      release_notes:
+        description: "Optional release notes"
+        required: false
+        type: string
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ inputs.version }}
+      RELEASE_NOTES: ${{ inputs.release_notes }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must use semantic versioning like 0.1.0" >&2
+            exit 1
+          fi
+
+      - name: Ensure tag does not already exist
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git rev-parse "refs/tags/$VERSION" >/dev/null 2>&1; then
+            echo "Tag already exists locally: $VERSION" >&2
+            exit 1
+          fi
+
+          if git ls-remote --tags origin "refs/tags/$VERSION" | grep -q .; then
+            echo "Tag already exists on origin: $VERSION" >&2
+            exit 1
+          fi
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Pack deploy artifact
+        run: tar -czf watcher-deploy.tar.gz package.json dist/src
+
+      - name: Create and push tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git tag -a "$VERSION" -m "Release $VERSION"
+          git push origin "$VERSION"
+
+      - name: Create GitHub release
+        uses: actions/github-script@v8
+        env:
+          VERSION: ${{ env.VERSION }}
+          RELEASE_NOTES: ${{ env.RELEASE_NOTES }}
+        with:
+          script: |
+            const fs = require("node:fs")
+            const version = process.env.VERSION
+            const releaseNotes = process.env.RELEASE_NOTES?.trim()
+            const body = releaseNotes && releaseNotes.length > 0
+              ? releaseNotes
+              : [
+                  `Watcher release ${version}`,
+                  "",
+                  `- Ref: ${context.ref}`,
+                  `- Commit: ${context.sha}`,
+                ].join("\n")
+
+            const release = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: version,
+              name: version,
+              body,
+              generate_release_notes: !releaseNotes,
+            })
+
+            await github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.data.id,
+              name: "watcher-deploy.tar.gz",
+              data: fs.readFileSync("watcher-deploy.tar.gz"),
+            })

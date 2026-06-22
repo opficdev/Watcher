@@ -40,7 +40,8 @@ test("adds same file overlap risk", () => {
   ])
 
   assert.deepEqual(reasonCodes(risks[0]), ["same_file_overlap"])
-  assert.equal(risks[0]?.score, 20)
+  assert.equal(risks[0]?.status, BranchRiskStatus.Medium)
+  assert.equal(risks[0]?.score, 30)
   assert.deepEqual(risks[0]?.reasons[0]?.files, ["src/shared.ts"])
   assert.deepEqual(risks[0]?.reasons[0]?.branches, ["feature/b"])
 })
@@ -61,7 +62,8 @@ test("adds same hunk overlap risk", () => {
   ])
 
   assert.deepEqual(reasonCodes(risks[0]), ["same_hunk_overlap", "same_file_overlap"])
-  assert.equal(risks[0]?.score, 55)
+  assert.equal(risks[0]?.status, BranchRiskStatus.Critical)
+  assert.equal(risks[0]?.score, 85)
   assert.deepEqual(risks[0]?.reasons[0]?.files, ["src/shared.ts"])
   assert.deepEqual(risks[0]?.reasons[0]?.branches, ["feature/b"])
 })
@@ -82,7 +84,8 @@ test("does not add same hunk risk for separated hunks", () => {
   ])
 
   assert.deepEqual(reasonCodes(risks[0]), ["same_file_overlap"])
-  assert.equal(risks[0]?.score, 20)
+  assert.equal(risks[0]?.status, BranchRiskStatus.Medium)
+  assert.equal(risks[0]?.score, 30)
 })
 
 // 실패한 check metadata가 branch risk에 반영되는지 확인
@@ -100,7 +103,8 @@ test("adds failed check risk", () => {
   ])
 
   assert.deepEqual(reasonCodes(risk), ["failed_check"])
-  assert.equal(risk?.score, 15)
+  assert.equal(risk?.status, BranchRiskStatus.Low)
+  assert.equal(risk?.score, 20)
   assert.deepEqual(risk?.reasons[0]?.checks, ["CI"])
 })
 
@@ -117,7 +121,8 @@ test("adds critical file risk", () => {
   })
 
   assert.deepEqual(reasonCodes(risk), ["critical_file_changed"])
-  assert.equal(risk?.score, 15)
+  assert.equal(risk?.status, BranchRiskStatus.Medium)
+  assert.equal(risk?.score, 25)
   assert.deepEqual(risk?.reasons[0]?.files, [".github/workflows/ci.yml", "package-lock.json"])
 })
 
@@ -134,7 +139,7 @@ test("adds merge check failure risk", () => {
 
   assert.deepEqual(reasonCodes(risk), ["merge_check_failed"])
   assert.equal(risk?.status, BranchRiskStatus.Medium)
-  assert.equal(risk?.score, 25)
+  assert.equal(risk?.score, 40)
 })
 
 // risk signal이 없으면 deterministic low risk reason을 생성하는지 확인
