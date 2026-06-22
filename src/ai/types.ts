@@ -10,11 +10,6 @@ export type AiPredictionEvidencePayload = {
   changedHunks: BranchChangedHunk[]
 }
 
-// AI prediction 비용을 줄이기 위해 deterministic score 기준으로 대상 branch를 제한하는 설정
-export type AiPredictionTargetSelectionOptions = {
-  minimumScore?: number
-}
-
 // AI provider에 전달할 system/user prompt 묶음
 export type AiPredictionPrompt = {
   systemPrompt: string
@@ -31,10 +26,8 @@ export type AiPredictionClient = {
   predict(prompt: AiPredictionPrompt): Promise<unknown>
 }
 
-// AI prediction runner가 대상 선택과 prompt 생성을 조정하기 위한 설정
-export type AiPredictionRunOptions =
-  AiPredictionTargetSelectionOptions &
-  AiPredictionPromptBuildOptions
+// AI prediction runner가 prompt 생성을 조정하기 위한 설정
+export type AiPredictionRunOptions = AiPredictionPromptBuildOptions
 
 // branch별 AI prediction 실행 결과
 export type AiPredictionResult =

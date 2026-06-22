@@ -14,7 +14,7 @@ export async function predict(
   client: AiPredictionClient,
   options: AiPredictionRunOptions = {}
 ): Promise<AiPredictionResult[]> {
-  const targets = new Set(selectTargets(payloads, options))
+  const targets = new Set(selectTargets(payloads))
   const results: AiPredictionResult[] = []
 
   for (const payload of payloads) {
