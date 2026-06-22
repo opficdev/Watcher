@@ -19,9 +19,9 @@ export function validateAiPredictionResponse(response: unknown): AiPrediction {
     baseBranch: stringFor(value.baseBranch, "baseBranch"),
     prediction: stringFor(value.prediction, "prediction"),
     confidence: confidenceFor(value.confidence),
-    recommendedActions: arrayFor(value.recommendedActions, "recommendedActions")
+    recommendedActions: arrayFor(value.recommendedActions ?? [], "recommendedActions")
       .map((action, index) => recommendedActionFor(action, index)),
-    falsePositiveNotes: arrayFor(value.falsePositiveNotes, "falsePositiveNotes")
+    falsePositiveNotes: arrayFor(value.falsePositiveNotes ?? [], "falsePositiveNotes")
       .map((note, index) => stringFor(note, `falsePositiveNotes[${index}]`))
   }
 }

@@ -52,8 +52,22 @@ test("rejects invalid action priority", () => {
   )
 })
 
-// falsePositiveNotes가 배열이 아니면 AI 응답을 거부하는지 확인
-test("rejects non-array false positive notes", () => {
+// optional 배열 field가 누락되거나 null이면 빈 배열로 보정되는지 확인
+test("defaults nullish optional arrays", () => {
+  const prediction = validateAiPredictionResponse({
+    branchName: "feature/watch",
+    baseBranch: "main",
+    prediction: "shared module 변경 의도가 겹쳐 rebase 우선 확인이 필요함",
+    confidence: 82,
+    recommendedActions: null
+  })
+
+  assert.deepEqual(prediction.recommendedActions, [])
+  assert.deepEqual(prediction.falsePositiveNotes, [])
+})
+
+// optional 배열 field가 배열이 아닌 값이면 AI 응답을 거부하는지 확인
+test("rejects non-array optional arrays", () => {
   assert.throws(
     () => validateAiPredictionResponse({
       ...validResponse(),
