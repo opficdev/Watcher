@@ -6,46 +6,9 @@ consumer repository는 Watcher 코드를 복사하지 않고 workflow 파일 하
 
 ## 설치
 
-consumer repository에 workflow 파일을 추가합니다.
+consumer repository에 workflow 파일 하나를 추가합니다. 전체 예시는 `docs/examples/consumer-merge-risk-watch.yml`에 있습니다.
 
-```yml
-name: Merge Risk Watch
-
-on:
-  pull_request:
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - ready_for_review
-  schedule:
-    - cron: "0 15 * * 1-5"
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  actions: read
-  checks: read
-  pull-requests: read
-
-jobs:
-  watch:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
-    uses: opficdev/Watcher/.github/workflows/merge-risk-watch.yml@develop
-    with:
-      repository: ${{ github.repository }}
-      base_branch: develop
-      default_branch: main
-      critical_file_patterns: |
-        package-lock.json
-        .github/workflows/**
-    secrets:
-      watcher_github_token: ${{ secrets.WATCHER_GITHUB_TOKEN }}
-      gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
-      discord_webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
-```
-
-같은 예시는 `docs/examples/consumer-merge-risk-watch.yml`에도 있습니다.
+예시에서 consumer repository에 맞게 `base_branch`, `default_branch`, `critical_file_patterns`, secret 이름을 조정합니다.
 
 ## Secrets
 
