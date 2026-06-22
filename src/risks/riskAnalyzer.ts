@@ -192,11 +192,10 @@ function buildHunkOverlaps(
   // branch -> file -> overlapping branch 목록
   const overlaps = new Map<string, Map<string, Set<string>>>()
 
-  for (const input of inputs) {
-    for (const other of inputs) {
-      if (input.branch.name === other.branch.name) {
-        continue
-      }
+  for (let index = 0; index < inputs.length; index += 1) {
+    for (let otherIndex = index + 1; otherIndex < inputs.length; otherIndex += 1) {
+      const input = inputs[index]
+      const other = inputs[otherIndex]
 
       const overlappingFiles = overlappingHunkFiles(
         input.changedHunks ?? [],
@@ -204,16 +203,27 @@ function buildHunkOverlaps(
       )
 
       for (const file of overlappingFiles) {
-        const branchOverlaps = overlaps.get(input.branch.name) ?? new Map<string, Set<string>>()
-        const branches = branchOverlaps.get(file) ?? new Set<string>()
-        branches.add(other.branch.name)
-        branchOverlaps.set(file, branches)
-        overlaps.set(input.branch.name, branchOverlaps)
+        addOverlap(overlaps, input.branch.name, file, other.branch.name)
+        addOverlap(overlaps, other.branch.name, file, input.branch.name)
       }
     }
   }
 
   return overlaps
+}
+
+// branch별 overlap map에 겹친 파일과 상대 branch를 기록
+function addOverlap(
+  overlaps: Map<string, Map<string, Set<string>>>,
+  branchName: string,
+  file: string,
+  otherBranchName: string
+): void {
+  const branchOverlaps = overlaps.get(branchName) ?? new Map<string, Set<string>>()
+  const branches = branchOverlaps.get(file) ?? new Set<string>()
+  branches.add(otherBranchName)
+  branchOverlaps.set(file, branches)
+  overlaps.set(branchName, branchOverlaps)
 }
 
 // 두 branch의 hunk 목록 중 line range가 겹치는 파일 목록을 반환
