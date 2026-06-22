@@ -54,17 +54,17 @@ Watcher는 merge된 branch를 직접 삭제하지 않습니다. consumer reposit
 
 예시 workflow는 `pull_request`, `schedule`, `workflow_dispatch`에서 실행됩니다. 일반 branch push만으로는 실행되지 않으며 PR 업데이트와 scheduled run에서 active branch 상태를 다시 확인합니다.
 
-## Deterministic possibility
+## 충돌 가능성 점수화
 
-Watcher는 merge 가능/불가능을 단정하지 않고 branch별 signal을 deterministic possibility score와 reason으로 변환합니다. 이 값은 같은 입력에 대해 항상 같은 결과가 나와야 하는 기본 판단층입니다.
+Watcher는 merge 가능/불가능을 단정하지 않고 branch별 signal을 충돌 가능성 score와 reason으로 변환합니다. 이 값은 같은 입력에 대해 항상 같은 결과가 나와야 하는 기본 판단층입니다.
 
 기본 입력은 branch metadata, git merge signal, 변경 파일, 변경 범위입니다. 변경 범위는 같은 파일 안에서 수정된 line range를 뜻하며 여러 branch가 같은 line range를 수정할수록 conflict 가능성을 높게 봅니다. Git diff에서는 이런 변경 범위를 hunk라고 부르며 Watcher는 같은 파일의 hunk line range가 겹치는지를 비교합니다.
 
 | signal | score | 의미 |
 | --- | ---: | --- |
 | `confirmed_conflict` | 100 | virtual merge에서 실제 conflict가 확인됨 |
-| `merge_check_failed` | 25 | fetch, merge-base, virtual merge 확인 단계가 실패함 |
 | `same_hunk_overlap` | 35 | 여러 branch가 같은 파일의 겹치는 변경 범위를 수정함 |
+| `merge_check_failed` | 25 | fetch, merge-base, virtual merge 확인 단계가 실패함 |
 | `same_file_overlap` | 20 | 여러 branch가 같은 파일을 수정함 |
 | `failed_check` | 15 | branch metadata에 실패한 check가 존재함 |
 | `critical_file_changed` | 15 | 설정한 critical file pattern에 해당하는 파일이 수정됨 |
@@ -74,10 +74,10 @@ Watcher는 merge 가능/불가능을 단정하지 않고 branch별 signal을 det
 
 | score | status |
 | ---: | --- |
-| 0-24 | `low` |
-| 25-49 | `medium` |
-| 50-79 | `high` |
 | 80-100 | `critical` |
+| 50-79 | `high` |
+| 25-49 | `medium` |
+| 0-24 | `low` |
 
 `confirmed_conflict`는 최상위 signal입니다. 이 signal이 있으면 다른 reason을 추가로 합산하지 않고 `critical` risk로 처리합니다.
 
