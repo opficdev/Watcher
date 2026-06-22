@@ -46,18 +46,22 @@ test("uses custom prediction threshold", async () => {
   )
 })
 
-// 선택된 branch prediction들이 서로 기다리지 않고 병렬로 시작되는지 확인
-test("starts selected predictions in parallel", async () => {
+// Gemini 무료 등급의 일시 실패를 줄이기 위해 선택된 branch prediction을 순차 실행하는지 확인
+test("runs selected predictions sequentially", async () => {
   const client = new DeferredAiPredictionClient()
   const running = predictMergeRisksWithAi([
     payload("feature/a", 55),
     payload("feature/b", 80)
   ], client)
 
+  await client.waitForPrompts(1)
+  assert.equal(client.prompts.length, 1)
+
+  client.resolveNext()
   await client.waitForPrompts(2)
   assert.equal(client.prompts.length, 2)
 
-  client.resolveAll()
+  client.resolveNext()
   const results = await running
   assert.deepEqual(results.map(result => result.status), ["predicted", "predicted"])
 })
@@ -144,10 +148,14 @@ class DeferredAiPredictionClient implements AiPredictionClient {
     }
   }
 
-  resolveAll(): void {
-    for (const pending of this.pending.splice(0)) {
-      pending.resolve(validResponse(branchNameFrom(pending.prompt)))
+  resolveNext(): void {
+    const pending = this.pending.shift()
+
+    if (!pending) {
+      throw new Error("No pending AI prediction")
     }
+
+    pending.resolve(validResponse(branchNameFrom(pending.prompt)))
   }
 }
 

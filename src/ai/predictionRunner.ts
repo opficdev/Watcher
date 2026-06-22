@@ -15,19 +15,23 @@ export async function predict(
   options: AiPredictionRunOptions = {}
 ): Promise<AiPredictionResult[]> {
   const targets = new Set(selectTargets(payloads, options))
+  const results: AiPredictionResult[] = []
 
-  return Promise.all(payloads.map(async (payload): Promise<AiPredictionResult> => {
+  for (const payload of payloads) {
     if (!targets.has(payload)) {
-      return {
+      results.push({
         status: "skipped",
         branchName: payload.branch.name,
         baseBranch: payload.branch.baseBranch,
         reason: "below_threshold"
-      }
+      })
+      continue
     }
 
-    return predictedResultFor(payload, client, options)
-  }))
+    results.push(await predictedResultFor(payload, client, options))
+  }
+
+  return results
 }
 
 // provider 호출과 schema 검증 실패를 branch 단위 failed 결과로 격리
