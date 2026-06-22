@@ -13,6 +13,15 @@ export async function send(
   options: ReportChannelOptions = {}
 ): Promise<ReportChannelResult> {
   const webhookUrl = options.discordWebhookUrl ?? process.env[DISCORD_WEBHOOK_URL_ENV_NAME]
+  const target = webhookUrl ? "discord" : "stdout"
+
+  if (!input.markdown.trim()) {
+    return {
+      ok: true,
+      target,
+      messageCount: 0
+    }
+  }
 
   if (webhookUrl) {
     return sendDiscord(input.markdown, webhookUrl, options)

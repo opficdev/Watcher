@@ -46,6 +46,41 @@ test("sends report to discord webhook", async () => {
   })
 })
 
+// 빈 Markdown report는 stdout write 없이 성공으로 처리되는지 확인
+test("skips stdout write for empty report", async () => {
+  const stdout = new StdoutSpy()
+  const result = await sendMergeRiskReport({
+    markdown: "   "
+  }, {
+    stdout
+  })
+
+  assert.deepEqual(result, {
+    ok: true,
+    target: "stdout",
+    messageCount: 0
+  })
+  assert.equal(stdout.output, "")
+})
+
+// 빈 Markdown report는 Discord request 없이 성공으로 처리되는지 확인
+test("skips discord request for empty report", async () => {
+  const fetcher = fetchSpy({})
+  const result = await sendMergeRiskReport({
+    markdown: "\n\t"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    fetch: fetcher
+  })
+
+  assert.deepEqual(result, {
+    ok: true,
+    target: "discord",
+    messageCount: 0
+  })
+  assert.equal(fetcher.requests.length, 0)
+})
+
 // Discord HTTP 실패를 진단 가능한 channel failure로 반환하는지 확인
 test("returns failure when discord webhook responds with error", async () => {
   const result = await sendMergeRiskReport({
