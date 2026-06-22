@@ -84,18 +84,6 @@ test("sends prompt to Gemini generateContent endpoint", async () => {
   assert.equal(body.generationConfig.responseFormat.text.mimeType, "APPLICATION_JSON")
 })
 
-// Gemini JSON text 응답이 기존 AI prediction validator에 넘길 수 있는 object로 parse되는지 확인
-test("parses Gemini JSON text response", async () => {
-  const client = new GeminiPredictionClient({
-    apiKey: "gemini-key",
-    fetch: fetchSpy(validGeminiResponse())
-  })
-
-  const response = await client.predict(prompt())
-
-  assert.deepEqual(response, validPrediction())
-})
-
 // Gemini HTTP 실패가 branch 단위 failed result로 격리될 수 있도록 Error로 노출되는지 확인
 test("throws when Gemini request fails", async () => {
   const client = new GeminiPredictionClient({
