@@ -164,7 +164,17 @@ function escapeLinkText(value: string): string {
   return value.replaceAll("[", "\\[").replaceAll("]", "\\]")
 }
 
-// Markdown inline code 안에서 backtick이 문법을 깨지 않도록 escape
+// Markdown inline code 안의 backtick보다 긴 delimiter를 사용해 code span을 구성
 function code(value: string): string {
-  return `\`${value.replaceAll("`", "\\`")}\``
+  const backtick = "`"
+
+  if (!value.includes(backtick)) {
+    return `${backtick}${value}${backtick}`
+  }
+
+  const matches = value.match(/`+/g) ?? []
+  const maxBackticks = Math.max(...matches.map(match => match.length))
+  const delimiter = backtick.repeat(maxBackticks + 1)
+
+  return `${delimiter} ${value} ${delimiter}`
 }

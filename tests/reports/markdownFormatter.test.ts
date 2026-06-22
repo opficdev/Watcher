@@ -50,6 +50,17 @@ test("formats deterministic reason metadata", () => {
   assert.match(markdown, /- checks: `build`/)
 })
 
+// inline code 내부 backtick이 Markdown code span 문법을 깨지 않도록 delimiter를 늘리는지 확인
+test("formats inline code containing backticks", () => {
+  const markdown = formatMergeRiskReportMarkdown(report(undefined, {
+    branchName: "feature/`risk`",
+    reasonFile: "src/`shared`.ts"
+  }))
+
+  assert.match(markdown, /#### `` feature\/`risk` ``/)
+  assert.match(markdown, /- files: `` src\/`shared`\.ts ``/)
+})
+
 // AI predicted 결과를 deterministic reason과 분리해 표시하는지 확인
 test("formats predicted AI result", () => {
   const markdown = formatMergeRiskReportMarkdown(report(predictedAiResult("feature/risk")))
@@ -123,7 +134,7 @@ function report(
       status: BranchRiskStatus.High,
       title: "High",
       items: [{
-        branchName: "feature/risk",
+        branchName,
         baseBranch: "main",
         score: 65,
         status: BranchRiskStatus.High,
@@ -137,7 +148,7 @@ function report(
         },
         branch: {
           baseBranch: "main",
-          name: "feature/risk",
+          name: branchName,
           headSha: "feature-risk-sha",
           checks: []
         },
@@ -145,7 +156,7 @@ function report(
           code: "same_hunk_overlap",
           message: "다른 branch와 같은 hunk를 수정함",
           scoreImpact: 35,
-          files: ["src/shared.ts"],
+          files: [options.reasonFile ?? "src/shared.ts"],
           branches: ["feature/other"],
           checks: ["build"]
         }],
