@@ -11,7 +11,7 @@ const actionPriorities = new Set<AiRecommendedActionPriority>([
 ])
 
 // AI가 반환한 unknown JSON을 Watcher가 사용하는 prediction 모델로 검증
-export function validateAiPredictionResponse(response: unknown): AiPrediction {
+export function validate(response: unknown): AiPrediction {
   const value = objectFor(response, "response")
 
   return {

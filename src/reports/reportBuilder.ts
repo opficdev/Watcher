@@ -25,7 +25,7 @@ const defaultSectionTitles: Record<BranchRiskStatusType, string> = {
 }
 
 // branch risk 목록을 status별 section으로 묶은 report 모델로 변환
-export function buildMergeRiskReport(
+export function build(
   inputs: MergeRiskReportInput[],
   baseBranch: string,
   options: MergeRiskReportOptions = {}

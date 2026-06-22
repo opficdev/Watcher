@@ -31,7 +31,7 @@ const failedCheckConclusions = new Set([
 ])
 
 // branch별 git/check/overlap signal을 deterministic risk score와 reason으로 변환
-export function analyzeBranchMergeRisks(
+export function analyze(
   inputs: BranchRiskAnalysisInput[],
   options: BranchRiskAnalysisOptions = {}
 ): BranchRisk[] {

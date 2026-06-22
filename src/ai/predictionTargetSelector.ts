@@ -7,7 +7,7 @@ import type {
 export const DEFAULT_AI_PREDICTION_MINIMUM_SCORE = 25
 
 // deterministic possibility score 기준으로 AI prediction 대상 evidence만 선택
-export function selectAiPredictionTargets(
+export function select(
   payloads: AiPredictionEvidencePayload[],
   options: AiPredictionTargetSelectionOptions = {}
 ): AiPredictionEvidencePayload[] {

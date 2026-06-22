@@ -1,6 +1,6 @@
-import { buildAiPredictionPrompt } from "./predictionPromptBuilder.js"
-import { selectAiPredictionTargets } from "./predictionTargetSelector.js"
-import { validateAiPredictionResponse } from "./predictionResponseValidator.js"
+import { build as buildPrompt } from "./predictionPromptBuilder.js"
+import { select as selectTargets } from "./predictionTargetSelector.js"
+import { validate as validateResponse } from "./predictionResponseValidator.js"
 import type {
   AiPredictionClient,
   AiPredictionEvidencePayload,
@@ -9,12 +9,12 @@ import type {
 } from "./types.js"
 
 // 대상 선택, prompt 생성, provider 호출, 응답 검증을 branch별 AI prediction 결과로 연결
-export async function predictMergeRisksWithAi(
+export async function predict(
   payloads: AiPredictionEvidencePayload[],
   client: AiPredictionClient,
   options: AiPredictionRunOptions = {}
 ): Promise<AiPredictionResult[]> {
-  const targets = new Set(selectAiPredictionTargets(payloads, options))
+  const targets = new Set(selectTargets(payloads, options))
 
   return Promise.all(payloads.map(async (payload): Promise<AiPredictionResult> => {
     if (!targets.has(payload)) {
@@ -37,9 +37,9 @@ async function predictedResultFor(
   options: AiPredictionRunOptions
 ): Promise<AiPredictionResult> {
   try {
-    const prompt = buildAiPredictionPrompt(payload, options)
+    const prompt = buildPrompt(payload, options)
     const response = await client.predict(prompt)
-    const prediction = validateAiPredictionResponse(response)
+    const prediction = validateResponse(response)
 
     return {
       status: "predicted",

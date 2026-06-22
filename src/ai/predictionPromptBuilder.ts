@@ -6,7 +6,7 @@ import type {
 } from "./types.js"
 
 // deterministic evidence만 사용해 AI prediction prompt를 구성
-export function buildAiPredictionPrompt(
+export function build(
   payload: AiPredictionEvidencePayload,
   options: AiPredictionPromptBuildOptions = {}
 ): AiPredictionPrompt {

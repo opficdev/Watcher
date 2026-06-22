@@ -2,7 +2,7 @@ import type { BranchRisk, BranchRiskAnalysisInput } from "../risks/types.js"
 import type { AiPredictionEvidencePayload } from "./types.js"
 
 // deterministic possibility와 원본 분석 입력을 AI prediction용 evidence payload로 결합
-export function buildAiPredictionEvidencePayload(
+export function build(
   input: BranchRiskAnalysisInput,
   possibility: BranchRisk
 ): AiPredictionEvidencePayload {
