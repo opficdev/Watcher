@@ -54,7 +54,7 @@ Watcher는 merge된 branch를 직접 삭제하지 않습니다. consumer reposit
 
 예시 workflow는 `pull_request`, `schedule`, `workflow_dispatch`에서 실행됩니다. 일반 branch push만으로는 실행되지 않으며 PR 업데이트와 scheduled run에서 active branch 상태를 다시 확인합니다.
 
-reusable workflow 자체도 `workflow_dispatch`를 지원하므로 Watcher repository의 Actions 화면에서 수동 테스트 실행이 가능합니다. 이 경우 `repository`, `base_branch`, `default_branch`, `critical_file_patterns` input을 직접 입력하고 repository secret `WATCHER_GITHUB_TOKEN`, `GEMINI_API_KEY`, `DISCORD_WEBHOOK_URL`을 사용합니다.
+consumer repository의 예시 workflow는 `workflow_dispatch`를 지원하므로 Actions 화면에서 수동 테스트 실행이 가능합니다.
 
 ## 충돌 가능성 점수화
 
