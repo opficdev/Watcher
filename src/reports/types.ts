@@ -1,4 +1,4 @@
-import type { BranchContext } from "../branches/types.js"
+import type { BranchContext, BranchPullRequestMetadata } from "../branches/types.js"
 import type { BranchRisk, BranchRiskReason, BranchRiskStatus } from "../risks/types.js"
 
 // report 전체가 어떤 base branch 기준으로 생성됐는지 표현
@@ -23,6 +23,9 @@ export type MergeRiskReportItem = {
   score: number
   status: BranchRiskStatus
   reasons: BranchRiskReason[]
+  author?: string
+  updatedAt?: Date
+  pullRequest?: BranchPullRequestMetadata
   branch: BranchContext
 }
 

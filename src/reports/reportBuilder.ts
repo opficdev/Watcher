@@ -75,6 +75,9 @@ function toReportItem(input: MergeRiskReportInput): MergeRiskReportItem {
     score: input.risk.score,
     status: input.risk.status,
     reasons: input.risk.reasons,
+    author: input.branch.author,
+    updatedAt: input.branch.updatedAt,
+    pullRequest: input.branch.pullRequest,
     branch: input.branch
   }
 }

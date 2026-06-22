@@ -68,12 +68,58 @@ test("uses custom section titles", () => {
   assert.equal(report.sections[0]?.title, "충돌 확인")
 })
 
+// branch author와 updatedAt metadata를 report item에 보존하는지 확인
+test("keeps branch author and updated time metadata", () => {
+  const updatedAt = new Date("2026-06-22T01:00:00.000Z")
+  const report = buildMergeRiskReport([
+    input("feature/metadata", BranchRiskStatus.Medium, 25, {
+      author: "opfic",
+      updatedAt
+    })
+  ], "main")
+
+  const item = report.sections[0]?.items[0]
+  assert.equal(item?.author, "opfic")
+  assert.equal(item?.updatedAt, updatedAt)
+})
+
+// 연결된 Pull Request metadata가 없어도 report item 생성이 가능한지 확인
+test("keeps pull request metadata optional", () => {
+  const report = buildMergeRiskReport([
+    input("feature/no-pr", BranchRiskStatus.Low, 0)
+  ], "main")
+
+  assert.equal(report.sections[0]?.items[0]?.pullRequest, undefined)
+})
+
+// 연결된 Pull Request metadata를 report item에 보존하는지 확인
+test("keeps pull request metadata when present", () => {
+  const report = buildMergeRiskReport([
+    input("feature/pr", BranchRiskStatus.High, 50, {
+      pullRequest: {
+        number: 12,
+        title: "Report item",
+        url: "https://github.com/opficdev/Watcher/pull/12",
+        author: "opfic"
+      }
+    })
+  ], "main")
+
+  assert.deepEqual(report.sections[0]?.items[0]?.pullRequest, {
+    number: 12,
+    title: "Report item",
+    url: "https://github.com/opficdev/Watcher/pull/12",
+    author: "opfic"
+  })
+})
+
 function input(
   branchName: string,
   status: BranchRiskStatusType,
-  score: number
+  score: number,
+  metadata: Partial<BranchContext> = {}
 ): MergeRiskReportInput {
-  const context = branch(branchName)
+  const context = branch(branchName, metadata)
 
   return {
     branch: context,
@@ -87,12 +133,16 @@ function input(
   }
 }
 
-function branch(name: string): BranchContext {
+function branch(
+  name: string,
+  metadata: Partial<BranchContext> = {}
+): BranchContext {
   return {
     baseBranch: "main",
     name,
     headSha: `${name}-sha`,
-    checks: []
+    checks: [],
+    ...metadata
   }
 }
 
