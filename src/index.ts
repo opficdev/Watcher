@@ -23,6 +23,7 @@ export {
 export { validateAiPredictionResponse } from "./ai/predictionResponseValidator.js"
 export { collectGitMergeSignal } from "./git/gitMergeSignalCollector.js"
 export { analyzeBranchMergeRisks } from "./risks/riskAnalyzer.js"
+export { buildMergeRiskReport } from "./reports/reportBuilder.js"
 export { BranchRiskStatus } from "./risks/types.js"
 
 export type { BranchSource } from "./branches/branchCollector.js"
