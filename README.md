@@ -10,6 +10,10 @@ GitHub repository의 `Settings` > `General` > `Pull Requests`에서 `Automatical
 
 AI prediction은 기본 provider로 Gemini API를 사용합니다. consumer repository에는 `GEMINI_API_KEY` secret을 설정해야 하며 Watcher는 deterministic evidence를 Gemini에 전달해 prediction과 recommended actions를 생성합니다.
 
+Merge risk report는 report channel을 통해 출력됩니다. consumer repository에 `DISCORD_WEBHOOK_URL` secret이 있으면 Discord webhook으로 report를 전송합니다. `DISCORD_WEBHOOK_URL`이 없으면 같은 Markdown report를 stdout으로 출력하므로 local 실행이나 CI log에서 결과를 확인할 수 있습니다.
+
+Discord webhook으로 전송할 때는 Discord message length 제한에 맞춰 긴 report를 여러 메시지로 나눕니다. 전송 실패가 발생해도 webhook URL secret이 error message에 그대로 노출되지 않도록 처리합니다.
+
 ## 충돌 가능성 판단 방식
 
 Watcher는 merge 가능/불가능을 단정하지 않고 branch별 signal을 점수와 reason으로 변환합니다.
