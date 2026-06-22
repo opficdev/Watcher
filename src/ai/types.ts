@@ -10,6 +10,11 @@ export type AiPredictionEvidencePayload = {
   changedHunks: BranchChangedHunk[]
 }
 
+// AI prediction 비용을 줄이기 위해 deterministic score 기준으로 대상 branch를 제한하는 설정
+export type AiPredictionTargetSelectionOptions = {
+  minimumScore?: number
+}
+
 // AI가 deterministic possibility를 덮어쓰지 않고 추가로 제공하는 예측 결과
 export type AiPrediction = {
   branchName: string
