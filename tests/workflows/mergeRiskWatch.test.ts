@@ -132,6 +132,26 @@ test("collects pull request metadata for matching branch", async () => {
   })
 })
 
+// GitHub token이 없으면 빈 Authorization header를 보내지 않는지 확인
+test("omits authorization header when GitHub token is missing", async () => {
+  const requests: Request[] = []
+  const client = githubMetadataClientFor({
+    ...baseOptions(),
+    githubToken: undefined,
+    fetch: async (input, init) => {
+      requests.push(new Request(input, init))
+
+      return jsonResponse({
+        check_runs: []
+      })
+    }
+  })
+
+  await client.checksFor("abc123")
+
+  assert.equal(requests[0]?.headers.has("Authorization"), false)
+})
+
 function baseOptions() {
   return {
     repository: "opficdev/Watcher",

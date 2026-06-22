@@ -335,12 +335,17 @@ async function githubJson<T>(
   query: Record<string, string> = {}
 ): Promise<T> {
   const fetcher = options.fetch ?? fetch
+  const headers: Record<string, string> = {
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28"
+  }
+
+  if (options.githubToken) {
+    headers["Authorization"] = `Bearer ${options.githubToken}`
+  }
+
   const response = await fetcher(githubUrlFor(options.githubApiUrl, segments, query), {
-    headers: {
-      "Accept": "application/vnd.github+json",
-      "Authorization": `Bearer ${options.githubToken ?? ""}`,
-      "X-GitHub-Api-Version": "2022-11-28"
-    }
+    headers
   })
 
   if (!response.ok) {
