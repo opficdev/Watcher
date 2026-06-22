@@ -81,7 +81,7 @@ test("sends prompt to Gemini generateContent endpoint", async () => {
 
   assert.equal(body.systemInstruction.parts[0]?.text, "Return JSON only.")
   assert.equal(body.contents[0]?.parts[0]?.text, "{\"branch\":\"feature/a\"}")
-  assert.equal(body.generationConfig.responseFormat.text.mimeType, "application/json")
+  assert.equal(body.generationConfig.responseFormat.text.mimeType, "APPLICATION_JSON")
 })
 
 // Gemini JSON text 응답이 기존 AI prediction validator에 넘길 수 있는 object로 parse되는지 확인
