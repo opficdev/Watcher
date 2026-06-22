@@ -76,7 +76,26 @@ jobs:
         working-directory: watched-repository
         run: git fetch origin '+refs/heads/*:refs/remotes/origin/*' --prune
 
+      - name: Resolve Watcher source
+        id: watcher_source
+        env:
+          WATCHER_WORKFLOW_REF: ${{ job.workflow_ref }}
+        run: |
+          set -euo pipefail
+
+          workflow_ref_name="${WATCHER_WORKFLOW_REF##*@}"
+          release_tag=""
+
+          if [[ "$workflow_ref_name" == refs/tags/* ]]; then
+            release_tag="${workflow_ref_name#refs/tags/}"
+          elif [[ "$workflow_ref_name" != refs/heads/* && "$workflow_ref_name" != refs/pull/* && ! "$workflow_ref_name" =~ ^[0-9a-f]{40}$ ]]; then
+            release_tag="$workflow_ref_name"
+          fi
+
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+
       - name: Checkout Watcher
+        if: steps.watcher_source.outputs.release_tag == ''
         uses: actions/checkout@v6
         with:
           repository: ${{ job.workflow_repository }}
@@ -87,14 +106,27 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: watcher/package-lock.json
+
+      - name: Download Watcher release
+        if: steps.watcher_source.outputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WATCHER_RELEASE_TAG: ${{ steps.watcher_source.outputs.release_tag }}
+        run: |
+          mkdir -p watcher-release watcher
+          gh release download "${WATCHER_RELEASE_TAG}" \
+            --repo "${{ job.workflow_repository }}" \
+            --pattern watcher-deploy.tar.gz \
+            --dir watcher-release
+          tar -xzf watcher-release/watcher-deploy.tar.gz -C watcher
 
       - name: Install Watcher dependencies
+        if: steps.watcher_source.outputs.release_tag == ''
         working-directory: watcher
         run: npm ci
 
       - name: Build Watcher
+        if: steps.watcher_source.outputs.release_tag == ''
         working-directory: watcher
         run: npm run build
 

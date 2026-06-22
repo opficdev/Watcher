@@ -8,6 +8,8 @@ consumer repository는 Watcher 코드를 복사하지 않고 workflow 파일 하
 
 consumer repository에 workflow 파일 하나를 추가합니다. 전체 예시는 `docs/examples/consumer-merge-risk-watch.yml`에 있습니다.
 
+운영 환경에서는 `uses: opficdev/Watcher/.github/workflows/merge-risk-watch.yml@0.1.0`처럼 release tag를 ref로 고정합니다. Watcher는 이 ref를 기준으로 같은 tag의 release asset을 자동으로 다운로드합니다.
+
 예시에서 consumer repository에 맞게 `base_branch`, `default_branch`, `critical_file_patterns`, secret 이름을 조정합니다.
 
 ## Secrets
@@ -55,6 +57,19 @@ Watcher는 merge된 branch를 직접 삭제하지 않습니다. consumer reposit
 예시 workflow는 `pull_request`, `schedule`, `workflow_dispatch`에서 실행됩니다. 일반 branch push만으로는 실행되지 않으며 PR 업데이트와 scheduled run에서 active branch 상태를 다시 확인합니다.
 
 consumer repository의 예시 workflow는 `workflow_dispatch`를 지원하므로 Actions 화면에서 수동 테스트 실행이 가능합니다.
+
+## Release 배포
+
+Watcher는 CD workflow에서 입력한 semantic version 기준으로 배포본을 생성합니다. Actions에서 `CD` workflow를 수동 실행하고 `version`에 `0.1.0` 같은 값을 입력하면 build와 test를 실행한 뒤 tag, GitHub Release, `watcher-deploy.tar.gz` asset을 생성합니다.
+
+| input | 필수 여부 | 용도 |
+| --- | --- | --- |
+| `version` | 필수 | 생성할 release version. prefix 없는 semantic version. 예: `0.1.0` |
+| `release_notes` | 선택 | GitHub Release 본문. 비어 있으면 GitHub release note 생성 사용 |
+
+release asset에는 실행에 필요한 `dist/src`와 `package.json`이 포함됩니다. consumer repository가 reusable workflow를 release tag로 호출하면 Watcher는 같은 tag의 release asset을 다운로드해 실행합니다.
+
+branch나 SHA ref로 reusable workflow를 호출하면 개발용 fallback으로 Watcher source를 checkout하고 `npm ci`, `npm run build`를 실행합니다.
 
 ## 충돌 가능성 점수화
 

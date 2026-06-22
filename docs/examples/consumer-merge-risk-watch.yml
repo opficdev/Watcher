@@ -20,7 +20,7 @@ permissions:
 jobs:
   watch:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
-    uses: opficdev/Watcher/.github/workflows/merge-risk-watch.yml@develop
+    uses: opficdev/Watcher/.github/workflows/merge-risk-watch.yml@0.1.0
     with:
       repository: ${{ github.repository }}
       base_branch: develop
