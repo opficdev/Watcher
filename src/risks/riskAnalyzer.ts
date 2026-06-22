@@ -15,11 +15,11 @@ const MAX_SCORE = 100
 // 각 rule이 branch risk score에 더하는 가중치
 const SCORE = {
   confirmedConflict: 100,
-  mergeCheckFailed: 25,
-  sameHunkOverlap: 35,
-  sameFileOverlap: 20,
-  failedCheck: 15,
-  criticalFileChanged: 15
+  mergeCheckFailed: 40,
+  sameHunkOverlap: 55,
+  sameFileOverlap: 30,
+  failedCheck: 20,
+  criticalFileChanged: 25
 } as const
 
 // GitHub check conclusion 중 merge risk를 높이는 실패 계열 상태

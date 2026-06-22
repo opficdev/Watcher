@@ -63,11 +63,11 @@ Watcher는 merge 가능/불가능을 단정하지 않고 branch별 signal을 충
 | signal | score | 의미 |
 | --- | ---: | --- |
 | `confirmed_conflict` | 100 | virtual merge에서 실제 conflict가 확인됨 |
-| `same_hunk_overlap` | 35 | 여러 branch가 같은 파일의 겹치는 변경 범위를 수정함 |
-| `merge_check_failed` | 25 | fetch, merge-base, virtual merge 확인 단계가 실패함 |
-| `same_file_overlap` | 20 | 여러 branch가 같은 파일을 수정함 |
-| `failed_check` | 15 | branch metadata에 실패한 check가 존재함 |
-| `critical_file_changed` | 15 | 설정한 critical file pattern에 해당하는 파일이 수정됨 |
+| `same_hunk_overlap` | 55 | 여러 branch가 같은 파일의 겹치는 변경 범위를 수정함 |
+| `merge_check_failed` | 40 | fetch, merge-base, virtual merge 확인 단계가 실패함 |
+| `same_file_overlap` | 30 | 여러 branch가 같은 파일을 수정함 |
+| `critical_file_changed` | 25 | 설정한 critical file pattern에 해당하는 파일이 수정됨 |
+| `failed_check` | 20 | branch metadata에 실패한 check가 존재함 |
 | `clean_merge` | 0 | virtual merge에서 conflict가 확인되지 않음 |
 
 각 branch의 score는 적용된 signal의 점수를 합산하고 최대 100점으로 제한합니다.
