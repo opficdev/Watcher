@@ -104,7 +104,7 @@ function geminiRequestBodyFor(prompt: AiPredictionPrompt): Record<string, unknow
     generationConfig: {
       responseFormat: {
         text: {
-          mimeType: "application/json",
+          mimeType: "APPLICATION_JSON",
           schema: aiPredictionSchema()
         }
       }
