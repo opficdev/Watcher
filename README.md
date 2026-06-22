@@ -19,7 +19,7 @@ on:
       - reopened
       - ready_for_review
   schedule:
-    - cron: "0 0 * * 1-5"
+    - cron: "0 15 * * 1-5"
   workflow_dispatch:
 
 permissions:
