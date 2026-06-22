@@ -1,6 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import {
+  DEFAULT_AI_PREDICTION_MINIMUM_SCORE,
   selectAiPredictionTargets,
   type AiPredictionEvidencePayload,
   type BranchContext,
@@ -12,7 +13,7 @@ import {
 test("selects medium or higher score targets by default", () => {
   const selected = selectAiPredictionTargets([
     payload("feature/low", 20),
-    payload("feature/medium", 25),
+    payload("feature/medium", DEFAULT_AI_PREDICTION_MINIMUM_SCORE),
     payload("feature/high", 55)
   ])
 

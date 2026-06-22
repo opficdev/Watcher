@@ -7,7 +7,10 @@ export function watcherRuntimeDescription(): string {
 export { collectBranchContexts } from "./branches/branchCollector.js"
 export { selectWatchedBranches } from "./branches/branchSelector.js"
 export { buildAiPredictionEvidencePayload } from "./ai/evidenceBuilder.js"
-export { selectAiPredictionTargets } from "./ai/predictionTargetSelector.js"
+export {
+  DEFAULT_AI_PREDICTION_MINIMUM_SCORE,
+  selectAiPredictionTargets
+} from "./ai/predictionTargetSelector.js"
 export { validateAiPredictionResponse } from "./ai/predictionResponseValidator.js"
 export { collectGitMergeSignal } from "./git/gitMergeSignalCollector.js"
 export { analyzeBranchMergeRisks } from "./risks/riskAnalyzer.js"
