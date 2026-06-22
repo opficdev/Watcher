@@ -8,6 +8,8 @@ Watcher는 기준이 되는 `baseBranch`와 `defaultBranch`를 제외한 모든 
 
 GitHub repository의 `Settings` > `General` > `Pull Requests`에서 `Automatically delete head branches` 옵션을 반드시 켜야 합니다. 이 옵션을 켜면 merge된 branch가 자동으로 삭제되어 Watcher가 이미 merge된 branch까지 계속 감시하는 상황을 줄일 수 있습니다.
 
+AI prediction은 기본 provider로 Gemini API를 사용합니다. consumer repository에는 `GEMINI_API_KEY` secret을 설정해야 하며 Watcher는 deterministic evidence를 Gemini에 전달해 prediction과 recommended actions를 생성합니다.
+
 ## 충돌 가능성 판단 방식
 
 Watcher는 merge 가능/불가능을 단정하지 않고 branch별 signal을 점수와 reason으로 변환합니다.
