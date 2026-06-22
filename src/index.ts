@@ -24,6 +24,7 @@ export { validate as validateAiPredictionResponse } from "./ai/predictionRespons
 export { collectGitMergeSignal } from "./git/gitMergeSignalCollector.js"
 export { analyze as analyzeBranchMergeRisks } from "./risks/riskAnalyzer.js"
 export { build as buildMergeRiskReport } from "./reports/reportBuilder.js"
+export { format as formatMergeRiskReportMarkdown } from "./reports/markdownFormatter.js"
 export { BranchRiskStatus } from "./risks/types.js"
 
 export type { BranchSource } from "./branches/branchCollector.js"
