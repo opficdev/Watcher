@@ -3,6 +3,9 @@ import type {
   AiPredictionPrompt
 } from "./types.js"
 
+// workflow log가 과도하게 커지지 않도록 Gemini 실패 응답 본문을 제한
+const MAX_GEMINI_ERROR_DETAIL_LENGTH = 1000
+
 // Watcher가 Gemini prediction에 기본으로 사용할 model 이름
 export const DEFAULT_GEMINI_PREDICTION_MODEL = "gemini-3.5-flash"
 
@@ -68,7 +71,7 @@ export class GeminiPredictionClient implements AiPredictionClient {
     })
 
     if (!response.ok) {
-      throw new Error(`Gemini prediction request failed with status ${response.status}`)
+      throw new Error(await geminiRequestErrorMessageFor(response))
     }
 
     const value = await response.json() as GeminiGenerateContentResponse
@@ -91,7 +94,7 @@ export function createDefaultAiPredictionClient(
 // Watcher가 검증할 AiPrediction shape를 Gemini structured output schema로 전달
 function geminiRequestBodyFor(prompt: AiPredictionPrompt): Record<string, unknown> {
   return {
-    system_instruction: {
+    systemInstruction: {
       parts: [{ text: prompt.systemPrompt }]
     },
     contents: [{
@@ -106,6 +109,30 @@ function geminiRequestBodyFor(prompt: AiPredictionPrompt): Record<string, unknow
         }
       }
     }
+  }
+}
+
+// Gemini API가 반환한 HTTP 실패 원문을 보존해 workflow log에서 원인을 확인
+async function geminiRequestErrorMessageFor(response: Response): Promise<string> {
+  const detail = await geminiErrorDetailFor(response)
+  const message = `Gemini prediction request failed with status ${response.status}`
+
+  return detail ? `${message}: ${detail}` : message
+}
+
+// 실패 응답 body를 읽을 수 없거나 비어 있으면 기존 status 기반 오류만 사용
+async function geminiErrorDetailFor(response: Response): Promise<string | undefined> {
+  try {
+    const text = await response.text()
+    const trimmed = text.trim()
+
+    if (MAX_GEMINI_ERROR_DETAIL_LENGTH < trimmed.length) {
+      return trimmed.slice(0, MAX_GEMINI_ERROR_DETAIL_LENGTH) + "... (1000자 제한)"
+    }
+
+    return trimmed || undefined
+  } catch {
+    return undefined
   }
 }
 

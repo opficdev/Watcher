@@ -1,15 +1,15 @@
 name: Merge Risk Watch
 
 on:
-  pull_request:
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - ready_for_review
   schedule:
     - cron: "0 15 * * 0-4"
   workflow_dispatch:
+    inputs:
+      watcher_version:
+        description: "테스트할 Watcher release tag. 비워두면 workflow ref 기준"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -19,12 +19,12 @@ permissions:
 
 jobs:
   watch:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     uses: opficdev/Watcher/.github/workflows/merge-risk-watch.yml@0.1.0
     with:
       repository: ${{ github.repository }}
       base_branch: develop
       default_branch: main
+      watcher_version: ${{ inputs.watcher_version }}
       critical_file_patterns: |
         package-lock.json
         .github/workflows/**

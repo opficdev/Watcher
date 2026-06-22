@@ -21,6 +21,11 @@ on:
         required: false
         type: string
         default: ""
+      watcher_version:
+        description: "테스트할 Watcher release tag. 비워두면 workflow ref 기준"
+        required: false
+        type: string
+        default: ""
     secrets:
       watcher_github_token:
         description: "감시 대상 repository checkout, fetch, metadata 조회에 사용할 token"
@@ -48,6 +53,11 @@ on:
         default: ""
       critical_file_patterns:
         description: "critical file wildcard pattern 목록. 줄바꿈으로 구분"
+        required: false
+        type: string
+        default: ""
+      watcher_version:
+        description: "테스트할 Watcher release tag. 비워두면 workflow ref 기준"
         required: false
         type: string
         default: ""
@@ -80,13 +90,16 @@ jobs:
         id: watcher_source
         env:
           WATCHER_WORKFLOW_REF: ${{ job.workflow_ref }}
+          WATCHER_VERSION: ${{ inputs.watcher_version }}
         run: |
           set -euo pipefail
 
           workflow_ref_name="${WATCHER_WORKFLOW_REF##*@}"
           release_tag=""
 
-          if [[ "$workflow_ref_name" == refs/tags/* ]]; then
+          if [[ -n "$WATCHER_VERSION" ]]; then
+            release_tag="$WATCHER_VERSION"
+          elif [[ "$workflow_ref_name" == refs/tags/* ]]; then
             release_tag="${workflow_ref_name#refs/tags/}"
           elif [[ "$workflow_ref_name" != refs/heads/* && "$workflow_ref_name" != refs/pull/* && ! "$workflow_ref_name" =~ ^[0-9a-f]{40}$ ]]; then
             release_tag="$workflow_ref_name"

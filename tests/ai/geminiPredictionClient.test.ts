@@ -60,7 +60,7 @@ test("sends prompt to Gemini generateContent endpoint", async () => {
   assert.equal(request?.init.headers["x-goog-api-key"], "gemini-key")
 
   const body = JSON.parse(request?.init.body as string) as {
-    system_instruction: {
+    systemInstruction: {
       parts: Array<{
         text: string
       }>
@@ -79,7 +79,7 @@ test("sends prompt to Gemini generateContent endpoint", async () => {
     }
   }
 
-  assert.equal(body.system_instruction.parts[0]?.text, "Return JSON only.")
+  assert.equal(body.systemInstruction.parts[0]?.text, "Return JSON only.")
   assert.equal(body.contents[0]?.parts[0]?.text, "{\"branch\":\"feature/a\"}")
   assert.equal(body.generationConfig.responseFormat.text.mimeType, "application/json")
 })
@@ -102,13 +102,35 @@ test("throws when Gemini request fails", async () => {
     apiKey: "gemini-key",
     fetch: fetchSpy({}, {
       ok: false,
-      status: 429
+      status: 429,
+      text: JSON.stringify({
+        error: {
+          message: "model is overloaded"
+        }
+      })
     })
   })
 
   await assert.rejects(
     client.predict(prompt()),
-    /Gemini prediction request failed with status 429/
+    /Gemini prediction request failed with status 429: .*model is overloaded/
+  )
+})
+
+// Gemini HTTP 실패 응답이 너무 길면 workflow log를 보호하기 위해 일부만 노출하는지 확인
+test("truncates long Gemini error response", async () => {
+  const client = new GeminiPredictionClient({
+    apiKey: "gemini-key",
+    fetch: fetchSpy({}, {
+      ok: false,
+      status: 400,
+      text: "x".repeat(1200)
+    })
+  })
+
+  await assert.rejects(
+    client.predict(prompt()),
+    /Gemini prediction request failed with status 400: x{1000}\.\.\. \(1000자 제한\)/
   )
 })
 
@@ -148,6 +170,7 @@ function fetchSpy(
   options: {
     ok?: boolean
     status?: number
+    text?: string
   } = {}
 ): FetchSpy {
   const requests: FetchSpy["requests"] = []
@@ -166,7 +189,8 @@ function fetchSpy(
     return {
       ok: options.ok ?? true,
       status: options.status ?? 200,
-      json: async () => body
+      json: async () => body,
+      text: async () => options.text ?? JSON.stringify(body)
     } as Response
   }) as FetchSpy
 

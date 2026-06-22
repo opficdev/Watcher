@@ -69,10 +69,76 @@ jobs:
         shell: bash
         run: |
           log_file="$(mktemp)"
+          summary_file="$(mktemp)"
+          jobs_file="$(mktemp)"
 
-          if ! gh run view "${GITHUB_RUN_ID}" --repo "${GITHUB_REPOSITORY}" --log-failed > "${log_file}"; then
+          extract_failure_summary() {
+            awk '
+              /not ok |failureType:|error: \|-|AssertionError|The input did not match|Input:/ {
+                start = NR - 4
+                end = NR + 20
+                if (start < 1) {
+                  start = 1
+                }
+                for (line = start; line <= end; line += 1) {
+                  selected[line] = 1
+                }
+              }
+              /##\[error\]|Process completed with exit code/ {
+                start = NR - 4
+                end = NR
+                if (start < 1) {
+                  start = 1
+                }
+                for (line = start; line <= end; line += 1) {
+                  selected[line] = 1
+                }
+              }
+              {
+                lines[NR] = $0
+              }
+              END {
+                printed = 0
+                for (line = 1; line <= NR; line += 1) {
+                  if (selected[line]) {
+                    print lines[line]
+                    printed = 1
+                  }
+                }
+                if (!printed) {
+                  start = NR - 79
+                  if (start < 1) {
+                    start = 1
+                  }
+                  for (line = start; line <= NR; line += 1) {
+                    print lines[line]
+                  }
+                }
+              }
+            ' "$1"
+          }
+
+          gh run view "${GITHUB_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --json jobs > "${jobs_file}"
+
+          failed_job_id="$(jq -r '
+            .jobs[]
+            | select(.conclusion == "failure")
+            | select(.name != "Report")
+            | .databaseId
+          ' "${jobs_file}" | head -n 1)"
+
+          if [[ -n "${failed_job_id}" && "${failed_job_id}" != "null" ]]; then
+            gh run view "${GITHUB_RUN_ID}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --job "${failed_job_id}" \
+              --log > "${log_file}" || echo "failed job log를 조회하지 못함" > "${log_file}"
+          elif ! gh run view "${GITHUB_RUN_ID}" --repo "${GITHUB_REPOSITORY}" --log-failed > "${log_file}"; then
             echo "failed logs를 조회하지 못함" > "${log_file}"
           fi
+
+          extract_failure_summary "${log_file}" > "${summary_file}"
 
           {
             echo "## CI 실패"
@@ -82,8 +148,8 @@ jobs:
             echo "- 실행 로그: ${RUN_URL}"
             echo
             echo "\`\`\`text"
-            tail -n 120 "${log_file}"
+            cat "${summary_file}"
             echo "\`\`\`"
           } > comment.md
 
-          gh pr comment "${PR_NUMBER}" --body-file comment.md
+          gh pr comment "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}" --body-file comment.md
