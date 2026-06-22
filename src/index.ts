@@ -8,6 +8,7 @@ export { collectBranchContexts } from "./branches/branchCollector.js"
 export { selectWatchedBranches } from "./branches/branchSelector.js"
 export { buildAiPredictionEvidencePayload } from "./ai/evidenceBuilder.js"
 export { selectAiPredictionTargets } from "./ai/predictionTargetSelector.js"
+export { validateAiPredictionResponse } from "./ai/predictionResponseValidator.js"
 export { collectGitMergeSignal } from "./git/gitMergeSignalCollector.js"
 export { analyzeBranchMergeRisks } from "./risks/riskAnalyzer.js"
 
