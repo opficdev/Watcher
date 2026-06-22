@@ -1,4 +1,11 @@
 import type {
+  AiPredictionFailedResult,
+  AiPredictionPredictedResult,
+  AiPredictionResult,
+  AiPredictionSkippedResult,
+  AiRecommendedAction
+} from "../ai/types.js"
+import type {
   MergeRiskReport,
   MergeRiskReportItem
 } from "./types.js"
@@ -37,7 +44,8 @@ function linesForItem(item: MergeRiskReportItem): string[] {
     `- score/status: ${code(item.score.toString())} / ${code(item.status)}`,
     ...metadataLinesFor(item),
     "- reasons:",
-    ...item.reasons.flatMap(reason => linesForReason(reason))
+    ...item.reasons.flatMap(reason => linesForReason(reason)),
+    ...aiPredictionLinesFor(item.aiPrediction)
   ]
 }
 
@@ -76,6 +84,75 @@ function linesForReason(reason: BranchRiskReason): string[] {
 
   if (reason.checks?.length) {
     lines.push(`    - checks: ${reason.checks.map(code).join(", ")}`)
+  }
+
+  return lines
+}
+
+// AI prediction 결과가 있을 때 deterministic reason과 분리된 Markdown block으로 표시
+function aiPredictionLinesFor(prediction: AiPredictionResult | undefined): string[] {
+  if (!prediction) {
+    return []
+  }
+
+  if (prediction.status === "predicted") {
+    return predictedLinesFor(prediction)
+  }
+
+  if (prediction.status === "skipped") {
+    return skippedLinesFor(prediction)
+  }
+
+  return failedLinesFor(prediction)
+}
+
+// AI가 생성한 prediction, confidence, action, false positive note를 표시
+function predictedLinesFor(result: AiPredictionPredictedResult): string[] {
+  const lines = [
+    "- ai prediction:",
+    `  - prediction: ${result.prediction.prediction}`,
+    `  - confidence: ${code(result.prediction.confidence.toString())}`
+  ]
+
+  if (result.prediction.recommendedActions.length) {
+    lines.push("  - recommended actions:")
+    lines.push(...result.prediction.recommendedActions.flatMap(action => actionLinesFor(action)))
+  }
+
+  if (result.prediction.falsePositiveNotes.length) {
+    lines.push("  - false positive notes:")
+    lines.push(...result.prediction.falsePositiveNotes.map(note => `    - ${note}`))
+  }
+
+  return lines
+}
+
+// threshold 미달로 AI prediction을 생략한 이유를 표시
+function skippedLinesFor(result: AiPredictionSkippedResult): string[] {
+  return [
+    "- ai prediction:",
+    `  - status: ${code(result.status)}`,
+    `  - reason: ${code(result.reason)}`
+  ]
+}
+
+// provider 호출이나 schema 검증 실패가 branch report를 깨지 않도록 실패 이유만 표시
+function failedLinesFor(result: AiPredictionFailedResult): string[] {
+  return [
+    "- ai prediction:",
+    `  - status: ${code(result.status)}`,
+    `  - error: ${result.errorMessage}`
+  ]
+}
+
+// AI recommended action 하나를 우선순위, 설명, 관련 파일로 표시
+function actionLinesFor(action: AiRecommendedAction): string[] {
+  const lines = [
+    `    - ${code(action.priority)} ${action.title}: ${action.description}`
+  ]
+
+  if (action.files?.length) {
+    lines.push(`      - files: ${action.files.map(code).join(", ")}`)
   }
 
   return lines
