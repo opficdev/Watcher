@@ -130,7 +130,7 @@ test("truncates long Gemini error response", async () => {
 
   await assert.rejects(
     client.predict(prompt()),
-    /Gemini prediction request failed with status 400: x{1000}\.\.\. \(truncated\)/
+    /Gemini prediction request failed with status 400: x{1000}\.\.\. \(1000자 제한\)/
   )
 })
 
