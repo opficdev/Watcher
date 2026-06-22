@@ -15,6 +15,17 @@ export type AiPredictionTargetSelectionOptions = {
   minimumScore?: number
 }
 
+// AI provider에 전달할 system/user prompt 묶음
+export type AiPredictionPrompt = {
+  systemPrompt: string
+  userPrompt: string
+}
+
+// prompt 호출자가 provider나 실행 환경에 맞게 system prompt를 교체하기 위한 설정
+export type AiPredictionPromptBuildOptions = {
+  systemPrompt?: string
+}
+
 // AI가 deterministic possibility를 덮어쓰지 않고 추가로 제공하는 예측 결과
 export type AiPrediction = {
   branchName: string
