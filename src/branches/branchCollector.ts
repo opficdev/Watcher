@@ -1,4 +1,4 @@
-import { selectWatchedBranches } from "./branchSelector.js"
+import { select } from "./branchSelector.js"
 import type { BranchContext, BranchSelectionOptions, RepositoryBranch } from "./types.js"
 
 export type BranchSource = {
@@ -10,5 +10,5 @@ export async function collectBranchContexts(
   options: BranchSelectionOptions
 ): Promise<BranchContext[]> {
   const branches = await source.listBranches()
-  return selectWatchedBranches(branches, options)
+  return select(branches, options)
 }

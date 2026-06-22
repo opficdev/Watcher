@@ -1,11 +1,12 @@
 import type { BranchCheckMetadata } from "../branches/types.js"
+import { BranchRiskStatus } from "./types.js"
 import type {
   BranchChangedHunk,
   BranchRisk,
   BranchRiskAnalysisInput,
   BranchRiskAnalysisOptions,
   BranchRiskReason,
-  BranchRiskStatus
+  BranchRiskStatus as BranchRiskStatusType
 } from "./types.js"
 
 // risk score는 report에서 비교하기 쉽도록 0-100 범위로 제한
@@ -30,7 +31,7 @@ const failedCheckConclusions = new Set([
 ])
 
 // branch별 git/check/overlap signal을 deterministic risk score와 reason으로 변환
-export function analyzeBranchMergeRisks(
+export function analyze(
   inputs: BranchRiskAnalysisInput[],
   options: BranchRiskAnalysisOptions = {}
 ): BranchRisk[] {
@@ -269,20 +270,20 @@ function isFailedCheck(check: BranchCheckMetadata): boolean {
 }
 
 // score 구간을 사람이 읽을 수 있는 risk status로 변환
-function statusForScore(score: number): BranchRiskStatus {
+function statusForScore(score: number): BranchRiskStatusType {
   if (80 <= score) {
-    return "critical"
+    return BranchRiskStatus.Critical
   }
 
   if (50 <= score) {
-    return "high"
+    return BranchRiskStatus.High
   }
 
   if (25 <= score) {
-    return "medium"
+    return BranchRiskStatus.Medium
   }
 
-  return "low"
+  return BranchRiskStatus.Low
 }
 
 // critical file pattern을 경로 전체에 매칭되는 정규식으로 변환

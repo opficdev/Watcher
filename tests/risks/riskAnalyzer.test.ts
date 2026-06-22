@@ -1,6 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import {
+  BranchRiskStatus,
   analyzeBranchMergeRisks,
   type BranchContext,
   type BranchRiskAnalysisInput,
@@ -17,7 +18,7 @@ test("marks confirmed conflict as critical risk", () => {
     })
   ])
 
-  assert.equal(risk?.status, "critical")
+  assert.equal(risk?.status, BranchRiskStatus.Critical)
   assert.equal(risk?.score, 100)
   assert.deepEqual(risk?.reasons.map(reason => reason.code), ["confirmed_conflict"])
   assert.deepEqual(risk?.reasons[0]?.files, ["shared.ts"])
@@ -132,7 +133,7 @@ test("adds merge check failure risk", () => {
   ])
 
   assert.deepEqual(reasonCodes(risk), ["merge_check_failed"])
-  assert.equal(risk?.status, "medium")
+  assert.equal(risk?.status, BranchRiskStatus.Medium)
   assert.equal(risk?.score, 25)
 })
 
@@ -146,7 +147,7 @@ test("adds clean merge reason when no risk rules match", () => {
     })
   ])
 
-  assert.equal(risk?.status, "low")
+  assert.equal(risk?.status, BranchRiskStatus.Low)
   assert.equal(risk?.score, 0)
   assert.deepEqual(reasonCodes(risk), ["clean_merge"])
 })

@@ -5,24 +5,27 @@ export function watcherRuntimeDescription(): string {
 }
 
 export { collectBranchContexts } from "./branches/branchCollector.js"
-export { selectWatchedBranches } from "./branches/branchSelector.js"
-export { buildAiPredictionEvidencePayload } from "./ai/evidenceBuilder.js"
+export { select as selectWatchedBranches } from "./branches/branchSelector.js"
+export { build as buildAiPredictionEvidencePayload } from "./ai/evidenceBuilder.js"
 export {
   createDefaultAiPredictionClient,
   DEFAULT_GEMINI_PREDICTION_MODEL,
   GEMINI_API_KEY_ENV_NAME,
   GeminiPredictionClient
 } from "./ai/geminiPredictionClient.js"
-export { buildAiPredictionPrompt } from "./ai/predictionPromptBuilder.js"
+export { build as buildAiPredictionPrompt } from "./ai/predictionPromptBuilder.js"
 export { DEFAULT_AI_PREDICTION_SYSTEM_PROMPT } from "./ai/promptTemplates.js"
-export { predictMergeRisksWithAi } from "./ai/predictionRunner.js"
+export { predict as predictMergeRisksWithAi } from "./ai/predictionRunner.js"
 export {
   DEFAULT_AI_PREDICTION_MINIMUM_SCORE,
-  selectAiPredictionTargets
+  select as selectAiPredictionTargets
 } from "./ai/predictionTargetSelector.js"
-export { validateAiPredictionResponse } from "./ai/predictionResponseValidator.js"
+export { validate as validateAiPredictionResponse } from "./ai/predictionResponseValidator.js"
 export { collectGitMergeSignal } from "./git/gitMergeSignalCollector.js"
-export { analyzeBranchMergeRisks } from "./risks/riskAnalyzer.js"
+export { analyze as analyzeBranchMergeRisks } from "./risks/riskAnalyzer.js"
+export { build as buildMergeRiskReport } from "./reports/reportBuilder.js"
+export { format as formatMergeRiskReportMarkdown } from "./reports/markdownFormatter.js"
+export { BranchRiskStatus } from "./risks/types.js"
 
 export type { BranchSource } from "./branches/branchCollector.js"
 
@@ -66,6 +69,13 @@ export type {
   BranchRiskAnalysisInput,
   BranchRiskAnalysisOptions,
   BranchRiskReason,
-  BranchRiskReasonCode,
-  BranchRiskStatus
+  BranchRiskReasonCode
 } from "./risks/types.js"
+
+export type {
+  MergeRiskReport,
+  MergeRiskReportInput,
+  MergeRiskReportItem,
+  MergeRiskReportOptions,
+  MergeRiskReportSection
+} from "./reports/types.js"

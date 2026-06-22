@@ -4,7 +4,7 @@ import type {
   RepositoryBranch
 } from "./types.js"
 
-export function selectWatchedBranches(
+export function select(
   branches: RepositoryBranch[],
   options: BranchSelectionOptions
 ): BranchContext[] {
