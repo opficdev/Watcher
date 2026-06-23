@@ -170,6 +170,34 @@ test("does not retry non-retryable Gemini request failure", async () => {
   assert.equal(fetcher.requests.length, 1)
 })
 
+// Gemini quota 실패는 report가 길어지지 않도록 metric과 retry 시간만 요약하는지 확인
+test("summarizes Gemini quota failure", async () => {
+  const client = new GeminiPredictionClient({
+    apiKey: "gemini-key",
+    maxAttempts: 1,
+    fetch: fetchSpy({}, {
+      ok: false,
+      status: 429,
+      text: JSON.stringify({
+        error: {
+          code: 429,
+          message: [
+            "You exceeded your current quota.",
+            "Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.5-flash",
+            "Please retry in 51.095224543s."
+          ].join("\n"),
+          status: "RESOURCE_EXHAUSTED"
+        }
+      })
+    })
+  })
+
+  await assert.rejects(
+    client.predict(prompt()),
+    /Gemini prediction request failed with status 429: Gemini quota exceeded, metric: generativelanguage.googleapis.com\/generate_content_free_tier_requests, limit: 20, model: gemini-3.5-flash, retry after: 51.095224543s/
+  )
+})
+
 // Gemini HTTP 실패가 branch 단위 failed result로 격리될 수 있도록 Error로 노출되는지 확인
 test("throws when Gemini request fails", async () => {
   const client = new GeminiPredictionClient({

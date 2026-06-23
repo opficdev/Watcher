@@ -198,6 +198,13 @@ async function geminiErrorDetailFor(response: Response): Promise<string | undefi
   try {
     const text = await response.text()
     const trimmed = text.trim()
+    const rateLimitDetail = response.status === 429
+      ? geminiRateLimitDetailFor(trimmed)
+      : undefined
+
+    if (rateLimitDetail) {
+      return rateLimitDetail
+    }
 
     if (MAX_GEMINI_ERROR_DETAIL_LENGTH < trimmed.length) {
       return trimmed.slice(0, MAX_GEMINI_ERROR_DETAIL_LENGTH) + "... (1000자 제한)"
@@ -207,6 +214,64 @@ async function geminiErrorDetailFor(response: Response): Promise<string | undefi
   } catch {
     return undefined
   }
+}
+
+// Gemini 429 quota 응답은 report에 긴 원문 대신 핵심 metric과 retry 시간만 표시
+function geminiRateLimitDetailFor(text: string): string | undefined {
+  const message = geminiErrorMessageFor(text) ?? text
+  const metric = valueAfter(message, "Quota exceeded for metric:")
+  const limit = valueAfter(message, "limit:")
+  const model = valueAfter(message, "model:")
+  const retry = retryDelayTextFor(message)
+
+  if (!metric && !retry) {
+    return message || undefined
+  }
+
+  return [
+    "Gemini quota exceeded",
+    metric ? `metric: ${metric}` : undefined,
+    limit ? `limit: ${limit}` : undefined,
+    model ? `model: ${model}` : undefined,
+    retry ? `retry after: ${retry}` : undefined
+  ].filter((value): value is string => value !== undefined).join(", ")
+}
+
+// JSON error body에서 Gemini가 제공한 message만 추출
+function geminiErrorMessageFor(text: string): string | undefined {
+  try {
+    const value = JSON.parse(text) as {
+      error?: {
+        message?: unknown
+      }
+    }
+
+    return typeof value.error?.message === "string" ? value.error.message : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// "key: value" 형태의 Gemini quota message에서 한 항목만 추출
+function valueAfter(message: string, key: string): string | undefined {
+  const index = message.indexOf(key)
+
+  if (index === -1) {
+    return undefined
+  }
+
+  const value = message.slice(index + key.length).trim()
+  const end = value.search(/[,\n]/)
+  const trimmed = (end === -1 ? value : value.slice(0, end)).trim()
+
+  return trimmed || undefined
+}
+
+// Gemini quota message의 retry 안내 시간을 추출
+function retryDelayTextFor(message: string): string | undefined {
+  const match = message.match(/Please retry in ([0-9]+(?:\.[0-9]+)?s)/)
+
+  return match?.[1]
 }
 
 // Gemini 응답 part가 여러 개로 나뉘어도 하나의 JSON 문자열로 합침
