@@ -102,22 +102,16 @@ function aiPredictionLinesFor(prediction: AiPredictionResult | undefined): strin
   return failedLinesFor(prediction)
 }
 
-// AI가 생성한 prediction, confidence, action, false positive note를 표시
+// AI가 생성한 prediction과 action을 표시
 function predictedLinesFor(result: AiPredictionPredictedResult): string[] {
   const lines = [
     "- ai prediction:",
-    `  - prediction: ${result.prediction.prediction}`,
-    `  - confidence: ${code(result.prediction.confidence.toString())}`
+    `  - prediction: ${result.prediction.prediction}`
   ]
 
   if (result.prediction.recommendedActions.length) {
     lines.push("  - recommended actions:")
     lines.push(...result.prediction.recommendedActions.flatMap(action => actionLinesFor(action)))
-  }
-
-  if (result.prediction.falsePositiveNotes.length) {
-    lines.push("  - false positive notes:")
-    lines.push(...result.prediction.falsePositiveNotes.map(note => `    - ${note}`))
   }
 
   return lines

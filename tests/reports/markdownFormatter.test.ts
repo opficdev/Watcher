@@ -50,18 +50,17 @@ test("formats inline code containing backticks", () => {
   assert.match(markdown, /- files: `` src\/`shared`\.ts ``/)
 })
 
-// AI predicted 결과를 deterministic reason과 분리해 표시하는지 확인
+// AI predicted 결과를 action 중심으로 축약해 표시하는지 확인
 test("formats predicted AI result", () => {
   const markdown = formatMergeRiskReportMarkdown(report(predictedAiResult("feature/risk")))
 
   assert.match(markdown, /- ai prediction:/)
   assert.match(markdown, /- prediction: 공유 파일 변경 의도가 겹칠 가능성 있음/)
-  assert.match(markdown, /- confidence: `82`/)
   assert.match(markdown, /- recommended actions:/)
   assert.match(markdown, /- `high` base branch rebase: 최신 main 기준으로 rebase 후 실제 충돌 여부 확인/)
   assert.match(markdown, /- files: `src\/shared.ts`/)
-  assert.match(markdown, /- false positive notes:/)
-  assert.match(markdown, /- 파일은 같지만 line range가 다르면 false positive 가능성 있음/)
+  assert.doesNotMatch(markdown, /confidence/)
+  assert.doesNotMatch(markdown, /false positive notes/)
 })
 
 // AI skipped 결과를 report에 표시하는지 확인
