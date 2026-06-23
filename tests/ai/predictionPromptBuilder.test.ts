@@ -1,7 +1,9 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import {
+  DEFAULT_AI_PREDICTION_BATCH_SYSTEM_PROMPT,
   DEFAULT_AI_PREDICTION_SYSTEM_PROMPT,
+  buildAiPredictionBatchPrompt,
   buildAiPredictionPrompt,
   type AiPredictionEvidencePayload,
   type BranchContext,
@@ -39,6 +41,28 @@ test("builds user prompt with structured evidence", () => {
   assert.equal(changedHunks[0]?.filePath, "src/shared.ts")
 })
 
+// batch prompt는 여러 branch evidence를 하나의 provider 호출 입력으로 묶는지 확인
+test("builds batch user prompt with structured evidence list", () => {
+  const prompt = buildAiPredictionBatchPrompt([
+    payload("feature/a"),
+    payload("feature/b")
+  ])
+  const evidence = JSON.parse(prompt.userPrompt) as {
+    branches: Array<{
+      branch: {
+        name: string
+      }
+    }>
+  }
+
+  assert.equal(prompt.systemPrompt, DEFAULT_AI_PREDICTION_BATCH_SYSTEM_PROMPT)
+  assert.equal(prompt.responseShape, "predictionBatch")
+  assert.deepEqual(evidence.branches.map(branch => branch.branch.name), [
+    "feature/a",
+    "feature/b"
+  ])
+})
+
 // prompt 출력이 provider와 무관한 system/user 문자열로만 구성되는지 확인
 test("keeps prompt provider agnostic", () => {
   const prompt = buildAiPredictionPrompt(payload())
@@ -57,11 +81,11 @@ test("allows caller provided system prompt", () => {
   assert.equal(prompt.systemPrompt, "Return only compact JSON.")
 })
 
-function payload(): AiPredictionEvidencePayload {
+function payload(branchName = "feature/watch"): AiPredictionEvidencePayload {
   return {
-    branch: branch(),
-    possibility: possibility(),
-    gitSignal: gitSignal(),
+    branch: branch(branchName),
+    possibility: possibility(branchName),
+    gitSignal: gitSignal(branchName),
     changedHunks: [{
       filePath: "src/shared.ts",
       startLine: 12,
@@ -70,11 +94,11 @@ function payload(): AiPredictionEvidencePayload {
   }
 }
 
-function branch(): BranchContext {
+function branch(name = "feature/watch"): BranchContext {
   return {
     baseBranch: "main",
-    name: "feature/watch",
-    headSha: "feature-watch-sha",
+    name,
+    headSha: `${name}-sha`,
     author: "opfic",
     updatedAt: new Date("2026-06-22T00:00:00.000Z"),
     checks: [{
@@ -90,9 +114,9 @@ function branch(): BranchContext {
   }
 }
 
-function possibility(): BranchRisk {
+function possibility(branchName = "feature/watch"): BranchRisk {
   return {
-    branchName: "feature/watch",
+    branchName,
     baseBranch: "main",
     score: 55,
     status: "high",
@@ -105,11 +129,11 @@ function possibility(): BranchRisk {
   }
 }
 
-function gitSignal(): GitMergeSignal {
+function gitSignal(branchName = "feature/watch"): GitMergeSignal {
   return {
     status: "clean",
     baseBranch: "main",
-    branchName: "feature/watch",
+    branchName,
     mergeBaseSha: "merge-base-sha",
     changedFiles: ["src/shared.ts"],
     conflictFiles: []

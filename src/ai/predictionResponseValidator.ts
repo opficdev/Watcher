@@ -12,17 +12,33 @@ const actionPriorities = new Set<AiRecommendedActionPriority>([
 
 // AI가 반환한 unknown JSON을 Watcher가 사용하는 prediction 모델로 검증
 export function validate(response: unknown): AiPrediction {
+  return predictionFor(response, "response")
+}
+
+// AI가 반환한 batch JSON을 branch별 prediction 배열로 검증
+export function validateBatch(response: unknown): AiPrediction[] {
   const value = objectFor(response, "response")
 
+  return arrayFor(value.predictions, "predictions")
+    .map((prediction, index) => predictionFor(prediction, `predictions[${index}]`))
+}
+
+// AI prediction 하나가 Watcher report에 사용할 수 있는 shape인지 검증
+function predictionFor(
+  response: unknown,
+  path: string
+): AiPrediction {
+  const value = objectFor(response, path)
+
   return {
-    branchName: stringFor(value.branchName, "branchName"),
-    baseBranch: stringFor(value.baseBranch, "baseBranch"),
-    prediction: stringFor(value.prediction, "prediction"),
+    branchName: stringFor(value.branchName, `${path}.branchName`),
+    baseBranch: stringFor(value.baseBranch, `${path}.baseBranch`),
+    prediction: stringFor(value.prediction, `${path}.prediction`),
     confidence: confidenceFor(value.confidence),
-    recommendedActions: arrayFor(value.recommendedActions ?? [], "recommendedActions")
+    recommendedActions: arrayFor(value.recommendedActions ?? [], `${path}.recommendedActions`)
       .map((action, index) => recommendedActionFor(action, index)),
-    falsePositiveNotes: arrayFor(value.falsePositiveNotes ?? [], "falsePositiveNotes")
-      .map((note, index) => stringFor(note, `falsePositiveNotes[${index}]`))
+    falsePositiveNotes: arrayFor(value.falsePositiveNotes ?? [], `${path}.falsePositiveNotes`)
+      .map((note, index) => stringFor(note, `${path}.falsePositiveNotes[${index}]`))
   }
 }
 

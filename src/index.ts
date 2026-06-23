@@ -13,14 +13,23 @@ export {
   GEMINI_API_KEY_ENV_NAME,
   GeminiPredictionClient
 } from "./ai/geminiPredictionClient.js"
-export { build as buildAiPredictionPrompt } from "./ai/predictionPromptBuilder.js"
-export { DEFAULT_AI_PREDICTION_SYSTEM_PROMPT } from "./ai/promptTemplates.js"
+export {
+  build as buildAiPredictionPrompt,
+  buildBatch as buildAiPredictionBatchPrompt
+} from "./ai/predictionPromptBuilder.js"
+export {
+  DEFAULT_AI_PREDICTION_BATCH_SYSTEM_PROMPT,
+  DEFAULT_AI_PREDICTION_SYSTEM_PROMPT
+} from "./ai/promptTemplates.js"
 export { predict as predictMergeRisksWithAi } from "./ai/predictionRunner.js"
 export {
   DEFAULT_AI_PREDICTION_TARGET_STATUS,
   select as selectAiPredictionTargets
 } from "./ai/predictionTargetSelector.js"
-export { validate as validateAiPredictionResponse } from "./ai/predictionResponseValidator.js"
+export {
+  validate as validateAiPredictionResponse,
+  validateBatch as validateAiPredictionBatchResponse
+} from "./ai/predictionResponseValidator.js"
 export { collectGitMergeSignal } from "./git/gitMergeSignalCollector.js"
 export { send as sendMergeRiskReport } from "./reportChannels/reportChannel.js"
 export { analyze as analyzeBranchMergeRisks } from "./risks/riskAnalyzer.js"
@@ -41,6 +50,7 @@ export type {
   AiPredictionFailedResult,
   AiPredictionPrompt,
   AiPredictionPromptBuildOptions,
+  AiPredictionPromptResponseShape,
   AiPredictionPredictedResult,
   AiPredictionResult,
   AiPredictionRunOptions,

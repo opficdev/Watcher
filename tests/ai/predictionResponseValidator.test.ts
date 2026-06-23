@@ -1,6 +1,9 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { validateAiPredictionResponse } from "../../src/index.js"
+import {
+  validateAiPredictionBatchResponse,
+  validateAiPredictionResponse
+} from "../../src/index.js"
 
 // AI prediction JSON이 기대한 모델이면 그대로 통과하는지 확인
 test("validates ai prediction response", () => {
@@ -23,6 +26,21 @@ test("validates ai prediction response", () => {
   assert.equal(prediction.recommendedActions[0]?.priority, "high")
   assert.deepEqual(prediction.falsePositiveNotes, [
     "서로 다른 export만 수정했다면 실제 conflict 가능성은 낮아질 수 있음"
+  ])
+})
+
+// batch AI prediction JSON이 branch별 prediction 배열이면 그대로 통과하는지 확인
+test("validates ai prediction batch response", () => {
+  const predictions = validateAiPredictionBatchResponse({
+    predictions: [
+      validResponse("feature/a"),
+      validResponse("feature/b")
+    ]
+  })
+
+  assert.deepEqual(predictions.map(prediction => prediction.branchName), [
+    "feature/a",
+    "feature/b"
   ])
 })
 
@@ -119,9 +137,9 @@ test("rejects non-string action files", () => {
   )
 })
 
-function validResponse(): Record<string, unknown> {
+function validResponse(branchName = "feature/watch"): Record<string, unknown> {
   return {
-    branchName: "feature/watch",
+    branchName,
     baseBranch: "main",
     prediction: "shared module 변경 의도가 겹쳐 rebase 우선 확인이 필요함",
     confidence: 82,
