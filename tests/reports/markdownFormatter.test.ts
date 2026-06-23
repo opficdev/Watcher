@@ -67,6 +67,32 @@ test("compacts duplicated same file overlap metadata", () => {
   assert.equal(markdown.match(/- branches: `feature\/other`/g)?.length, 1)
 })
 
+// hunk와 겹치지 않는 same file overlap 정보는 축약 과정에서도 보존되는지 확인
+test("keeps non-hunk same file overlap metadata", () => {
+  const markdown = formatMergeRiskReportMarkdown(report(undefined, {
+    reasons: [
+      {
+        code: "same_hunk_overlap",
+        message: "다른 branch와 같은 hunk를 수정함",
+        scoreImpact: 55,
+        files: ["src/a.ts"],
+        branches: ["feature/a"]
+      },
+      {
+        code: "same_file_overlap",
+        message: "다른 branch와 같은 파일을 수정함",
+        scoreImpact: 30,
+        files: ["src/a.ts", "src/b.ts"],
+        branches: ["feature/a", "feature/b"]
+      }
+    ]
+  }))
+
+  assert.equal(markdown.match(/`src\/a\.ts`/g)?.length, 1)
+  assert.match(markdown, /- files: `src\/b.ts`/)
+  assert.match(markdown, /- branches: `feature\/a`, `feature\/b`/)
+})
+
 // inline code 내부 backtick이 Markdown code span 문법을 깨지 않도록 delimiter를 늘리는지 확인
 test("formats inline code containing backticks", () => {
   const markdown = formatMergeRiskReportMarkdown(report(undefined, {

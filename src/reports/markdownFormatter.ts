@@ -38,7 +38,9 @@ export function format(report: MergeRiskReport): string {
 
 // branch 하나의 score, metadata, reason을 Markdown block으로 구성
 function linesForItem(item: MergeRiskReportItem): string[] {
-  const hasSameHunkOverlap = item.reasons.some(reason => reason.code === "same_hunk_overlap")
+  const sameHunkFiles = new Set(item.reasons
+    .filter(reason => reason.code === "same_hunk_overlap")
+    .flatMap(reason => reason.files ?? []))
 
   return [
     "",
@@ -46,10 +48,9 @@ function linesForItem(item: MergeRiskReportItem): string[] {
     `- score/status: ${code(item.score.toString())} / ${code(item.status)}`,
     ...metadataLinesFor(item),
     "- reasons:",
-    ...item.reasons.flatMap(reason => linesForReason(
-      reason,
-      hasSameHunkOverlap && reason.code === "same_file_overlap"
-    )),
+    ...item.reasons
+      .map(reason => compactSameFileOverlapReason(reason, sameHunkFiles))
+      .flatMap(reason => linesForReason(reason)),
     ...aiPredictionLinesFor(item.aiPrediction)
   ]
 }
@@ -69,20 +70,35 @@ function metadataLinesFor(item: MergeRiskReportItem): string[] {
   return lines
 }
 
-// deterministic reason의 code, score 영향, 관련 metadata를 Markdown bullet로 구성
-function linesForReason(
+// same hunk로 이미 설명된 file만 same file reason에서 제거해 중복 표시를 줄임
+function compactSameFileOverlapReason(
   reason: BranchRiskReason,
-  hidesOverlappedMetadata = false
-): string[] {
+  sameHunkFiles: Set<string>
+): BranchRiskReason {
+  if (reason.code !== "same_file_overlap" || !reason.files?.length || sameHunkFiles.size === 0) {
+    return reason
+  }
+
+  const files = reason.files.filter(file => !sameHunkFiles.has(file))
+
+  return {
+    ...reason,
+    files,
+    branches: 0 < files.length ? reason.branches : undefined
+  }
+}
+
+// deterministic reason의 code, score 영향, 관련 metadata를 Markdown bullet로 구성
+function linesForReason(reason: BranchRiskReason): string[] {
   const lines = [
     `  - ${code(reason.code)} (+${reason.scoreImpact.toString()}): ${reason.message}`
   ]
 
-  if (!hidesOverlappedMetadata && reason.files?.length) {
+  if (reason.files?.length) {
     lines.push(`    - files: ${reason.files.map(code).join(", ")}`)
   }
 
-  if (!hidesOverlappedMetadata && reason.branches?.length) {
+  if (reason.branches?.length) {
     lines.push(`    - branches: ${reason.branches.map(code).join(", ")}`)
   }
 
