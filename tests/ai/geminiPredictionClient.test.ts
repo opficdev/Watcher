@@ -84,10 +84,97 @@ test("sends prompt to Gemini generateContent endpoint", async () => {
   assert.equal(body.generationConfig.responseFormat.text.mimeType, "APPLICATION_JSON")
 })
 
+// Gemini 503 계열 일시 실패는 exponential backoff 후 재시도하는지 확인
+test("retries Gemini high demand failures with exponential backoff", async () => {
+  const fetcher = fetchSequenceSpy([
+    {
+      body: {},
+      ok: false,
+      status: 503,
+      text: "high demand"
+    },
+    {
+      body: {},
+      ok: false,
+      status: 503,
+      text: "high demand"
+    },
+    {
+      body: validGeminiResponse()
+    }
+  ])
+  const client = new GeminiPredictionClient({
+    apiKey: "gemini-key",
+    fetch: fetcher,
+    maxAttempts: 3,
+    retryBaseDelayMs: 0,
+    retryJitterMs: 0
+  })
+
+  const response = await client.predict(prompt())
+
+  assert.deepEqual(response, validPrediction())
+  assert.equal(fetcher.requests.length, 3)
+})
+
+// Gemini 429 rate limit은 일반 503보다 긴 대기 후 재시도하는지 확인
+test("retries Gemini rate limit failures with longer delay", async () => {
+  const fetcher = fetchSequenceSpy([
+    {
+      body: {},
+      ok: false,
+      status: 429,
+      text: "rate limit"
+    },
+    {
+      body: validGeminiResponse()
+    }
+  ])
+  const client = new GeminiPredictionClient({
+    apiKey: "gemini-key",
+    fetch: fetcher,
+    maxAttempts: 2,
+    rateLimitDelayMs: 0,
+    retryJitterMs: 0
+  })
+
+  const response = await client.predict(prompt())
+
+  assert.deepEqual(response, validPrediction())
+  assert.equal(fetcher.requests.length, 2)
+})
+
+// request body 오류처럼 non-retryable 실패는 retry 없이 즉시 실패하는지 확인
+test("does not retry non-retryable Gemini request failure", async () => {
+  const fetcher = fetchSequenceSpy([
+    {
+      body: {},
+      ok: false,
+      status: 400,
+      text: "invalid request"
+    },
+    {
+      body: validGeminiResponse()
+    }
+  ])
+  const client = new GeminiPredictionClient({
+    apiKey: "gemini-key",
+    fetch: fetcher,
+    maxAttempts: 5
+  })
+
+  await assert.rejects(
+    client.predict(prompt()),
+    /Gemini prediction request failed with status 400: invalid request/
+  )
+  assert.equal(fetcher.requests.length, 1)
+})
+
 // Gemini HTTP 실패가 branch 단위 failed result로 격리될 수 있도록 Error로 노출되는지 확인
 test("throws when Gemini request fails", async () => {
   const client = new GeminiPredictionClient({
     apiKey: "gemini-key",
+    maxAttempts: 1,
     fetch: fetchSpy({}, {
       ok: false,
       status: 429,
@@ -152,6 +239,13 @@ type FetchSpy = typeof fetch & {
   }>
 }
 
+type FetchResponse = {
+  body: unknown
+  ok?: boolean
+  status?: number
+  text?: string
+}
+
 // network 호출 없이 Gemini response와 HTTP 상태를 주입하는 fetch 대역
 function fetchSpy(
   body: unknown,
@@ -184,6 +278,44 @@ function fetchSpy(
 
   spy.requests = requests
   return spy
+}
+
+// 여러 Gemini 응답을 순서대로 반환해 retry 흐름을 검증하는 fetch 대역
+function fetchSequenceSpy(responses: FetchResponse[]): FetchSpy {
+  const requests: FetchSpy["requests"] = []
+  const spy = (async (
+    input: string | URL | Request,
+    init?: RequestInit
+  ): Promise<Response> => {
+    requests.push({
+      url: String(input),
+      init: {
+        headers: init?.headers as Record<string, string>,
+        body: init?.body
+      }
+    })
+
+    const response = responses.shift()
+
+    if (!response) {
+      throw new Error("Unexpected Gemini request")
+    }
+
+    return responseFor(response)
+  }) as FetchSpy
+
+  spy.requests = requests
+  return spy
+}
+
+// 테스트용 response 정의를 fetch Response 최소 구현으로 변환
+function responseFor(response: FetchResponse): Response {
+  return {
+    ok: response.ok ?? true,
+    status: response.status ?? 200,
+    json: async () => response.body,
+    text: async () => response.text ?? JSON.stringify(response.body)
+  } as Response
 }
 
 // Gemini client가 전송할 system/user prompt fixture
