@@ -101,7 +101,11 @@ test("sends batch response schema to Gemini", async () => {
         text: {
           schema: {
             properties: {
-              predictions?: unknown
+              predictions?: {
+                items?: {
+                  properties?: Record<string, unknown>
+                }
+              }
             }
           }
         }
@@ -110,6 +114,9 @@ test("sends batch response schema to Gemini", async () => {
   }
 
   assert.notEqual(body.generationConfig.responseFormat.text.schema.properties.predictions, undefined)
+  const properties = body.generationConfig.responseFormat.text.schema.properties.predictions?.items?.properties
+  assert.equal(properties?.confidence, undefined)
+  assert.equal(properties?.falsePositiveNotes, undefined)
 })
 
 // Gemini 503 계열 일시 실패는 exponential backoff 후 재시도하는지 확인
@@ -423,13 +430,11 @@ function validPrediction(): unknown {
     branchName: "feature/a",
     baseBranch: "main",
     prediction: "shared file 변경이 겹쳐 rebase 확인이 필요함",
-    confidence: 82,
     recommendedActions: [{
       title: "base branch rebase",
       description: "shared file 변경을 먼저 rebase해 실제 conflict 여부를 확인함",
       priority: "high",
       files: ["src/shared.ts"]
-    }],
-    falsePositiveNotes: []
+    }]
   }
 }

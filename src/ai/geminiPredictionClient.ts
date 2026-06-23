@@ -319,21 +319,15 @@ function aiPredictionSchema(): Record<string, unknown> {
       branchName: { type: "string" },
       baseBranch: { type: "string" },
       prediction: { type: "string" },
-      confidence: { type: "number" },
       recommendedActions: {
         type: "array",
         items: recommendedActionSchema()
-      },
-      falsePositiveNotes: {
-        type: "array",
-        items: { type: "string" }
       }
     },
     required: [
       "branchName",
       "baseBranch",
-      "prediction",
-      "confidence"
+      "prediction"
     ]
   }
 }

@@ -67,9 +67,7 @@ export type AiPrediction = {
   branchName: string
   baseBranch: string
   prediction: string
-  confidence: number
   recommendedActions: AiRecommendedAction[]
-  falsePositiveNotes: string[]
 }
 
 // AI가 제안하는 다음 action과 그 action이 필요한 근거

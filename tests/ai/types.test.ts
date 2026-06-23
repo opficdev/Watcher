@@ -14,18 +14,15 @@ test("models ai prediction separately from deterministic possibility", () => {
     branchName: "feature/watch",
     baseBranch: "main",
     prediction: "shared module 변경 의도가 겹쳐 rebase 우선 확인이 필요함",
-    confidence: 82,
     recommendedActions: [{
       title: "base branch rebase",
       description: "shared.ts 변경을 먼저 rebase해 실제 conflict 여부를 확인함",
       priority: "high",
       files: ["src/shared.ts"]
-    }],
-    falsePositiveNotes: ["서로 다른 export만 수정했다면 실제 conflict 가능성은 낮아질 수 있음"]
+    }]
   }
 
   assert.equal(prediction.branchName, "feature/watch")
-  assert.equal(prediction.confidence, 82)
   assert.equal(prediction.recommendedActions[0]?.priority, "high")
 })
 

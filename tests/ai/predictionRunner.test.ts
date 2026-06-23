@@ -98,10 +98,12 @@ test("records failed result when response is invalid", async () => {
     predictions: [{
       branchName: "feature/critical",
       baseBranch: "main",
-      prediction: "invalid confidence",
-      confidence: 120,
-      recommendedActions: [],
-      falsePositiveNotes: []
+      prediction: "invalid priority",
+      recommendedActions: [{
+        title: "base branch rebase",
+        description: "shared.ts 확인",
+        priority: "urgent"
+      }]
     }]
   })
   const [result] = await predictMergeRisksWithAi([
@@ -119,7 +121,11 @@ test("keeps valid batch predictions when one response item is invalid", async ()
       validResponse("feature/a"),
       {
         ...(validResponse("feature/b") as Record<string, unknown>),
-        confidence: 120
+        recommendedActions: [{
+          title: "base branch rebase",
+          description: "shared.ts 확인",
+          priority: "urgent"
+        }]
       }
     ]
   })
@@ -236,13 +242,11 @@ function validResponse(branchName: string): unknown {
     branchName,
     baseBranch: "main",
     prediction: "shared module 변경 의도가 겹쳐 rebase 우선 확인이 필요함",
-    confidence: 82,
     recommendedActions: [{
       title: "base branch rebase",
       description: "shared.ts 변경을 먼저 rebase해 실제 conflict 여부를 확인함",
       priority: "high",
       files: ["src/shared.ts"]
-    }],
-    falsePositiveNotes: []
+    }]
   }
 }

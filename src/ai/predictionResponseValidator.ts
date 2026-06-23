@@ -41,11 +41,8 @@ function predictionFor(
     branchName: stringFor(value.branchName, `${path}.branchName`),
     baseBranch: stringFor(value.baseBranch, `${path}.baseBranch`),
     prediction: stringFor(value.prediction, `${path}.prediction`),
-    confidence: confidenceFor(value.confidence),
     recommendedActions: arrayFor(value.recommendedActions ?? [], `${path}.recommendedActions`)
-      .map((action, index) => recommendedActionFor(action, index)),
-    falsePositiveNotes: arrayFor(value.falsePositiveNotes ?? [], `${path}.falsePositiveNotes`)
-      .map((note, index) => stringFor(note, `${path}.falsePositiveNotes[${index}]`))
+      .map((action, index) => recommendedActionFor(action, index))
   }
 }
 
@@ -67,21 +64,6 @@ function recommendedActionFor(
     priority,
     files
   }
-}
-
-// confidence는 report에서 비교할 수 있도록 0-100 범위의 정수로 제한
-function confidenceFor(value: unknown): number {
-  if (
-    typeof value !== "number" ||
-    !Number.isFinite(value) ||
-    !Number.isInteger(value) ||
-    value < 0 ||
-    100 < value
-  ) {
-    throw new Error("AI prediction response confidence must be an integer between 0 and 100")
-  }
-
-  return value
 }
 
 // action priority가 Watcher가 표시할 수 있는 허용 값인지 검증
