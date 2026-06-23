@@ -44,6 +44,21 @@ test("validates ai prediction batch response", () => {
   ])
 })
 
+// batch prediction 일부가 잘못되어도 유효한 prediction은 유지되는지 확인
+test("keeps valid predictions when batch contains invalid item", () => {
+  const predictions = validateAiPredictionBatchResponse({
+    predictions: [
+      validResponse("feature/a"),
+      {
+        ...validResponse("feature/b"),
+        confidence: 120
+      }
+    ]
+  })
+
+  assert.deepEqual(predictions.map(prediction => prediction.branchName), ["feature/a"])
+})
+
 // confidence가 0-100 범위를 벗어나면 AI 응답을 거부하는지 확인
 test("rejects confidence outside report range", () => {
   assert.throws(

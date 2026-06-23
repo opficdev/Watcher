@@ -20,7 +20,14 @@ export function validateBatch(response: unknown): AiPrediction[] {
   const value = objectFor(response, "response")
 
   return arrayFor(value.predictions, "predictions")
-    .map((prediction, index) => predictionFor(prediction, `predictions[${index}]`))
+    .map((prediction, index) => {
+      try {
+        return predictionFor(prediction, `predictions[${index}]`)
+      } catch {
+        return undefined
+      }
+    })
+    .filter((prediction): prediction is AiPrediction => prediction !== undefined)
 }
 
 // AI prediction 하나가 Watcher report에 사용할 수 있는 shape인지 검증

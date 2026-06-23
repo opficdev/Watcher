@@ -109,7 +109,28 @@ test("records failed result when response is invalid", async () => {
   ], client)
 
   assert.equal(result?.status, "failed")
-  assert.match(result?.status === "failed" ? result.errorMessage : "", /confidence/)
+  assert.match(result?.status === "failed" ? result.errorMessage : "", /AI prediction response is missing/)
+})
+
+// batch 응답 중 일부만 검증에 실패하면 해당 branch만 failed 처리하는지 확인
+test("keeps valid batch predictions when one response item is invalid", async () => {
+  const client = new AiPredictionClientSpy({
+    predictions: [
+      validResponse("feature/a"),
+      {
+        ...(validResponse("feature/b") as Record<string, unknown>),
+        confidence: 120
+      }
+    ]
+  })
+  const results = await predictMergeRisksWithAi([
+    payload("feature/a", 100, BranchRiskStatus.Critical),
+    payload("feature/b", 100, BranchRiskStatus.Critical)
+  ], client)
+
+  assert.equal(results[0]?.status, "predicted")
+  assert.equal(results[1]?.status, "failed")
+  assert.match(results[1]?.status === "failed" ? results[1].errorMessage : "", /AI prediction response is missing/)
 })
 
 // prompt builder 옵션이 runner를 통해 AI client까지 전달되는지 확인
