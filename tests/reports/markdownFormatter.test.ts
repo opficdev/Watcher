@@ -4,6 +4,7 @@ import {
   BranchRiskStatus,
   formatMergeRiskReportMarkdown,
   type AiPredictionResult,
+  type BranchRiskReason,
   type MergeRiskReport
 } from "../../src/index.js"
 
@@ -37,6 +38,33 @@ test("formats deterministic reason metadata", () => {
   assert.match(markdown, /- files: `src\/shared.ts`/)
   assert.match(markdown, /- branches: `feature\/other`/)
   assert.match(markdown, /- checks: `build`/)
+})
+
+// same hunk와 same file overlap이 같이 있으면 중복 file, branch 목록을 축약하는지 확인
+test("compacts duplicated same file overlap metadata", () => {
+  const markdown = formatMergeRiskReportMarkdown(report(undefined, {
+    reasons: [
+      {
+        code: "same_hunk_overlap",
+        message: "다른 branch와 같은 hunk를 수정함",
+        scoreImpact: 55,
+        files: ["src/shared.ts"],
+        branches: ["feature/other"]
+      },
+      {
+        code: "same_file_overlap",
+        message: "다른 branch와 같은 파일을 수정함",
+        scoreImpact: 30,
+        files: ["src/shared.ts"],
+        branches: ["feature/other"]
+      }
+    ]
+  }))
+
+  assert.match(markdown, /- `same_hunk_overlap` \(\+55\): 다른 branch와 같은 hunk를 수정함/)
+  assert.match(markdown, /- `same_file_overlap` \(\+30\): 다른 branch와 같은 파일을 수정함/)
+  assert.equal(markdown.match(/- files: `src\/shared\.ts`/g)?.length, 1)
+  assert.equal(markdown.match(/- branches: `feature\/other`/g)?.length, 1)
 })
 
 // inline code 내부 backtick이 Markdown code span 문법을 깨지 않도록 delimiter를 늘리는지 확인
@@ -109,6 +137,7 @@ function report(
   options: {
     branchName?: string
     reasonFile?: string
+    reasons?: BranchRiskReason[]
   } = {}
 ): MergeRiskReport {
   const branchName = options.branchName ?? "feature/risk"
@@ -139,7 +168,7 @@ function report(
           headSha: "feature-risk-sha",
           checks: []
         },
-        reasons: [{
+        reasons: options.reasons ?? [{
           code: "same_hunk_overlap",
           message: "다른 branch와 같은 hunk를 수정함",
           scoreImpact: 35,

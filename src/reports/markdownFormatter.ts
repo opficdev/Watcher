@@ -38,13 +38,18 @@ export function format(report: MergeRiskReport): string {
 
 // branch 하나의 score, metadata, reason을 Markdown block으로 구성
 function linesForItem(item: MergeRiskReportItem): string[] {
+  const hasSameHunkOverlap = item.reasons.some(reason => reason.code === "same_hunk_overlap")
+
   return [
     "",
     `#### ${code(item.branchName)}`,
     `- score/status: ${code(item.score.toString())} / ${code(item.status)}`,
     ...metadataLinesFor(item),
     "- reasons:",
-    ...item.reasons.flatMap(reason => linesForReason(reason)),
+    ...item.reasons.flatMap(reason => linesForReason(
+      reason,
+      hasSameHunkOverlap && reason.code === "same_file_overlap"
+    )),
     ...aiPredictionLinesFor(item.aiPrediction)
   ]
 }
@@ -65,16 +70,19 @@ function metadataLinesFor(item: MergeRiskReportItem): string[] {
 }
 
 // deterministic reason의 code, score 영향, 관련 metadata를 Markdown bullet로 구성
-function linesForReason(reason: BranchRiskReason): string[] {
+function linesForReason(
+  reason: BranchRiskReason,
+  hidesOverlappedMetadata = false
+): string[] {
   const lines = [
     `  - ${code(reason.code)} (+${reason.scoreImpact.toString()}): ${reason.message}`
   ]
 
-  if (reason.files?.length) {
+  if (!hidesOverlappedMetadata && reason.files?.length) {
     lines.push(`    - files: ${reason.files.map(code).join(", ")}`)
   }
 
-  if (reason.branches?.length) {
+  if (!hidesOverlappedMetadata && reason.branches?.length) {
     lines.push(`    - branches: ${reason.branches.map(code).join(", ")}`)
   }
 
