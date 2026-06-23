@@ -22,7 +22,7 @@ test("selects critical targets by default", () => {
   assert.deepEqual(selected.map(target => target.branch.name), ["feature/critical"])
 })
 
-// score가 높아도 critical status가 아니면 Gemini 호출 대상에서 제외되는지 확인
+// score가 높아도 critical status가 아니면 OpenAI 호출 대상에서 제외되는지 확인
 test("skips high score non-critical targets", () => {
   const selected = selectAiPredictionTargets([
     payload("feature/high", 90, BranchRiskStatus.High)

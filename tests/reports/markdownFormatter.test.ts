@@ -137,12 +137,12 @@ test("formats failed AI result", () => {
     status: "failed",
     branchName: "feature/risk",
     baseBranch: "main",
-    errorMessage: "Gemini request failed"
+    errorMessage: "OpenAI request failed"
   }))
 
   assert.match(markdown, /- ai prediction:/)
   assert.match(markdown, /- status: `failed`/)
-  assert.match(markdown, /- error: Gemini request failed/)
+  assert.match(markdown, /- error: OpenAI request failed/)
 })
 
 // section이 없으면 감시 대상 branch 없음 상태를 표시하는지 확인

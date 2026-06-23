@@ -9,10 +9,10 @@ export { select as selectWatchedBranches } from "./branches/branchSelector.js"
 export { build as buildAiPredictionEvidencePayload } from "./ai/evidenceBuilder.js"
 export {
   createDefaultAiPredictionClient,
-  DEFAULT_GEMINI_PREDICTION_MODEL,
-  GEMINI_API_KEY_ENV_NAME,
-  GeminiPredictionClient
-} from "./ai/geminiPredictionClient.js"
+  DEFAULT_OPENAI_PREDICTION_MODEL,
+  OPENAI_API_KEY_ENV_NAME,
+  OpenAiPredictionClient
+} from "./ai/openAiPredictionClient.js"
 export {
   build as buildAiPredictionPrompt,
   buildBatch as buildAiPredictionBatchPrompt
@@ -40,8 +40,8 @@ export { BranchRiskStatus } from "./risks/types.js"
 export type { BranchSource } from "./branches/branchCollector.js"
 
 export type {
-  GeminiPredictionClientOptions
-} from "./ai/geminiPredictionClient.js"
+  OpenAiPredictionClientOptions
+} from "./ai/openAiPredictionClient.js"
 
 export type {
   AiPrediction,

@@ -1,0 +1,271 @@
+import test from "node:test"
+import assert from "node:assert/strict"
+import {
+  createDefaultAiPredictionClient,
+  DEFAULT_OPENAI_PREDICTION_MODEL,
+  OPENAI_API_KEY_ENV_NAME,
+  OpenAiPredictionClient,
+  type AiPredictionPrompt
+} from "../../src/index.js"
+
+// OPENAI_API_KEY가 없으면 provider 호출 전에 명확한 설정 오류가 발생하는지 확인
+test("requires OpenAI API key", () => {
+  const originalApiKey = process.env[OPENAI_API_KEY_ENV_NAME]
+  delete process.env[OPENAI_API_KEY_ENV_NAME]
+
+  try {
+    assert.throws(
+      () => new OpenAiPredictionClient({
+        fetch: fetchSpy(validOpenAiResponse())
+      }),
+      new RegExp(OPENAI_API_KEY_ENV_NAME)
+    )
+  } finally {
+    if (originalApiKey === undefined) {
+      delete process.env[OPENAI_API_KEY_ENV_NAME]
+    } else {
+      process.env[OPENAI_API_KEY_ENV_NAME] = originalApiKey
+    }
+  }
+})
+
+// Watcher 기본 AI provider factory가 OpenAI client를 반환하는지 확인
+test("creates OpenAI client as default AI prediction client", async () => {
+  const client = createDefaultAiPredictionClient({
+    apiKey: "openai-key",
+    fetch: fetchSpy(validOpenAiResponse())
+  })
+
+  const response = await client.predict(prompt())
+
+  assert.deepEqual(response, validPrediction())
+})
+
+// Watcher prompt가 OpenAI Responses API payload로 변환되는지 확인
+test("sends prompt to OpenAI responses endpoint", async () => {
+  const fetcher = fetchSpy(validOpenAiResponse())
+  const client = new OpenAiPredictionClient({
+    apiKey: "openai-key",
+    fetch: fetcher
+  })
+
+  await client.predict(prompt())
+
+  assert.equal(fetcher.requests.length, 1)
+  const request = fetcher.requests[0]
+  assert.equal(request?.url, "https://api.openai.com/v1/responses")
+  assert.equal(request?.init.headers["Authorization"], "Bearer openai-key")
+
+  const body = JSON.parse(request?.init.body as string) as {
+    model: string
+    input: Array<{
+      role: string
+      content: string
+    }>
+    text: {
+      format: {
+        type: string
+        name: string
+        strict: boolean
+      }
+    }
+  }
+
+  assert.equal(body.model, DEFAULT_OPENAI_PREDICTION_MODEL)
+  assert.equal(body.input[0]?.role, "developer")
+  assert.equal(body.input[0]?.content, "Return JSON only.")
+  assert.equal(body.input[1]?.role, "user")
+  assert.equal(body.input[1]?.content, "{\"branch\":\"feature/a\"}")
+  assert.equal(body.text.format.type, "json_schema")
+  assert.equal(body.text.format.name, "ai_prediction")
+  assert.equal(body.text.format.strict, true)
+})
+
+// batch prompt는 OpenAI structured output schema도 predictions 배열로 요청하는지 확인
+test("sends batch response schema to OpenAI", async () => {
+  const fetcher = fetchSpy(validOpenAiBatchResponse())
+  const client = new OpenAiPredictionClient({
+    apiKey: "openai-key",
+    fetch: fetcher
+  })
+
+  await client.predict(batchPrompt())
+
+  const request = fetcher.requests[0]
+  const body = JSON.parse(request?.init.body as string) as {
+    text: {
+      format: {
+        name: string
+        schema: {
+          additionalProperties?: boolean
+          properties: {
+            predictions?: {
+              items?: {
+                additionalProperties?: boolean
+                properties?: Record<string, unknown>
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  assert.equal(body.text.format.name, "ai_prediction_batch")
+  assert.equal(body.text.format.schema.additionalProperties, false)
+  assert.notEqual(body.text.format.schema.properties.predictions, undefined)
+  const predictionSchema = body.text.format.schema.properties.predictions?.items
+  assert.equal(predictionSchema?.additionalProperties, false)
+  assert.equal(predictionSchema?.properties?.confidence, undefined)
+  assert.equal(predictionSchema?.properties?.falsePositiveNotes, undefined)
+})
+
+// OpenAI HTTP 실패가 branch 단위 failed result로 격리될 수 있도록 Error로 노출되는지 확인
+test("throws when OpenAI request fails", async () => {
+  const client = new OpenAiPredictionClient({
+    apiKey: "openai-key",
+    fetch: fetchSpy({}, {
+      ok: false,
+      status: 429,
+      text: JSON.stringify({
+        error: {
+          message: "rate limit exceeded"
+        }
+      })
+    })
+  })
+
+  await assert.rejects(
+    client.predict(prompt()),
+    /OpenAI prediction request failed with status 429: .*rate limit exceeded/
+  )
+})
+
+// OpenAI HTTP 실패 응답이 너무 길면 workflow log를 보호하기 위해 일부만 노출하는지 확인
+test("truncates long OpenAI error response", async () => {
+  const client = new OpenAiPredictionClient({
+    apiKey: "openai-key",
+    fetch: fetchSpy({}, {
+      ok: false,
+      status: 400,
+      text: "x".repeat(1200)
+    })
+  })
+
+  await assert.rejects(
+    client.predict(prompt()),
+    /OpenAI prediction request failed with status 400: x{1000}\.\.\. \(1000자 제한\)/
+  )
+})
+
+// OpenAI 응답에 JSON text가 없으면 schema validation 이전에 명확한 오류가 발생하는지 확인
+test("throws when OpenAI response text is empty", async () => {
+  const client = new OpenAiPredictionClient({
+    apiKey: "openai-key",
+    fetch: fetchSpy({
+      output: [{
+        content: []
+      }]
+    })
+  })
+
+  await assert.rejects(
+    client.predict(prompt()),
+    /response text is empty/
+  )
+})
+
+// OpenAI client가 보낸 request를 테스트에서 검증하기 위한 fetch spy 타입
+type FetchSpy = typeof fetch & {
+  requests: Array<{
+    url: string
+    init: {
+      headers: Record<string, string>
+      body?: BodyInit | null
+    }
+  }>
+}
+
+// network 호출 없이 OpenAI response와 HTTP 상태를 주입하는 fetch 대역
+function fetchSpy(
+  body: unknown,
+  options: {
+    ok?: boolean
+    status?: number
+    text?: string
+  } = {}
+): FetchSpy {
+  const requests: FetchSpy["requests"] = []
+  const spy = (async (
+    input: string | URL | Request,
+    init?: RequestInit
+  ): Promise<Response> => {
+    requests.push({
+      url: String(input),
+      init: {
+        headers: init?.headers as Record<string, string>,
+        body: init?.body
+      }
+    })
+
+    return {
+      ok: options.ok ?? true,
+      status: options.status ?? 200,
+      json: async () => body,
+      text: async () => options.text ?? JSON.stringify(body)
+    } as Response
+  }) as FetchSpy
+
+  spy.requests = requests
+  return spy
+}
+
+// OpenAI client가 전송할 system/user prompt fixture
+function prompt(): AiPredictionPrompt {
+  return {
+    systemPrompt: "Return JSON only.",
+    userPrompt: "{\"branch\":\"feature/a\"}"
+  }
+}
+
+function batchPrompt(): AiPredictionPrompt {
+  return {
+    systemPrompt: "Return JSON only.",
+    userPrompt: "{\"branches\":[{\"branch\":\"feature/a\"}]}",
+    responseShape: "predictionBatch"
+  }
+}
+
+// OpenAI Responses API가 반환하는 JSON text 응답 fixture
+function validOpenAiResponse(): unknown {
+  return {
+    output: [{
+      content: [{
+        text: JSON.stringify(validPrediction())
+      }]
+    }]
+  }
+}
+
+function validOpenAiBatchResponse(): unknown {
+  return {
+    output_text: JSON.stringify({
+      predictions: [validPrediction()]
+    })
+  }
+}
+
+// Watcher AI prediction schema를 만족하는 parsed JSON fixture
+function validPrediction(): unknown {
+  return {
+    branchName: "feature/a",
+    baseBranch: "main",
+    prediction: "shared file 변경이 겹쳐 rebase 확인이 필요함",
+    recommendedActions: [{
+      title: "base branch rebase",
+      description: "shared file 변경을 먼저 rebase해 실제 conflict 여부를 확인함",
+      priority: "high",
+      files: ["src/shared.ts"]
+    }]
+  }
+}

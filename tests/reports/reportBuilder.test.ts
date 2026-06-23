@@ -158,7 +158,7 @@ test("keeps failed AI result when present", () => {
     status: "failed",
     branchName: "feature/failed",
     baseBranch: "main",
-    errorMessage: "Gemini request failed"
+    errorMessage: "OpenAI request failed"
   }
   const report = buildMergeRiskReport([
     input("feature/failed", BranchRiskStatus.Medium, 25, {}, prediction)
