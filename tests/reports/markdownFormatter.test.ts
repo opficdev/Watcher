@@ -19,25 +19,14 @@ test("formats merge risk report summary and sections", () => {
   assert.match(markdown, /- score\/status: `65` \/ `high`/)
 })
 
-// branch metadata와 Pull Request link가 Markdown item에 포함되는지 확인
-test("formats branch metadata and pull request link", () => {
+// branch metadata는 유지하되 Pull Request metadata는 Markdown item에서 제외되는지 확인
+test("formats branch metadata without pull request link", () => {
   const markdown = formatMergeRiskReportMarkdown(report())
 
   assert.match(markdown, /- author: `opfic`/)
   assert.match(markdown, /- updated: `2026-06-22T01:00:00.000Z`/)
-  assert.match(
-    markdown,
-    /- pull request: \[#12 Report item\]\(https:\/\/github.com\/opficdev\/Watcher\/pull\/12\)/
-  )
-})
-
-// Pull Request 제목의 대괄호가 Markdown link text를 깨지 않도록 escape되는지 확인
-test("escapes pull request title brackets", () => {
-  const markdown = formatMergeRiskReportMarkdown(report(undefined, {
-    pullRequestTitle: "[Report] item"
-  }))
-
-  assert.match(markdown, /- pull request: \[#12 \\\[Report\\\] item\]\(https:\/\/github.com\/opficdev\/Watcher\/pull\/12\)/)
+  assert.doesNotMatch(markdown, /pull request/)
+  assert.doesNotMatch(markdown, /github\.com\/opficdev\/Watcher\/pull\/12/)
 })
 
 // deterministic reason의 관련 파일, branch, check metadata가 표시되는지 확인
@@ -120,7 +109,6 @@ function report(
   aiPrediction?: AiPredictionResult,
   options: {
     branchName?: string
-    pullRequestTitle?: string
     reasonFile?: string
   } = {}
 ): MergeRiskReport {
@@ -142,7 +130,7 @@ function report(
         updatedAt: new Date("2026-06-22T01:00:00.000Z"),
         pullRequest: {
           number: 12,
-          title: options.pullRequestTitle ?? "Report item",
+          title: "Report item",
           url: "https://github.com/opficdev/Watcher/pull/12",
           author: "opfic"
         },
