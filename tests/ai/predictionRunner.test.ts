@@ -1,4 +1,4 @@
-import test from "node:test"
+import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import {
   BranchRiskStatus,
@@ -41,22 +41,61 @@ test("skips non-critical payloads", async () => {
 
 // Gemini 무료 등급의 일시 실패를 줄이기 위해 선택된 branch prediction을 순차 실행하는지 확인
 test("runs selected predictions sequentially", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] })
   const client = new DeferredAiPredictionClient()
-  const running = predictMergeRisksWithAi([
-    payload("feature/a", 100, BranchRiskStatus.Critical),
-    payload("feature/b", 100, BranchRiskStatus.Critical)
-  ], client)
 
-  await client.waitForPrompts(1)
-  assert.equal(client.prompts.length, 1)
+  try {
+    const running = predictMergeRisksWithAi([
+      payload("feature/a", 100, BranchRiskStatus.Critical),
+      payload("feature/b", 100, BranchRiskStatus.Critical)
+    ], client)
 
-  client.resolveNext()
-  await client.waitForPrompts(2)
-  assert.equal(client.prompts.length, 2)
+    await client.waitForPrompts(1)
+    assert.equal(client.prompts.length, 1)
 
-  client.resolveNext()
-  const results = await running
-  assert.deepEqual(results.map(result => result.status), ["predicted", "predicted"])
+    client.resolveNext()
+    await flushTasks()
+    mock.timers.tick(60000)
+    await flushTasks()
+    assert.equal(client.prompts.length, 2)
+
+    client.resolveNext()
+    const results = await running
+    assert.deepEqual(results.map(result => result.status), ["predicted", "predicted"])
+  } finally {
+    mock.timers.reset()
+  }
+})
+
+// 선택된 AI 호출 사이에 내부 기본 간격을 두는지 확인
+test("waits between selected predictions", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] })
+  const client = new DeferredAiPredictionClient()
+
+  try {
+    const running = predictMergeRisksWithAi([
+      payload("feature/a", 100, BranchRiskStatus.Critical),
+      payload("feature/b", 100, BranchRiskStatus.Critical)
+    ], client)
+
+    await client.waitForPrompts(1)
+    client.resolveNext()
+    await flushTasks()
+
+    mock.timers.tick(59999)
+    await flushTasks()
+    assert.equal(client.prompts.length, 1)
+
+    mock.timers.tick(1)
+    await flushTasks()
+    assert.equal(client.prompts.length, 2)
+
+    client.resolveNext()
+    await running
+    assert.equal(client.prompts.length, 2)
+  } finally {
+    mock.timers.reset()
+  }
 })
 
 // AI client 오류가 전체 실행 실패가 아니라 branch 단위 failed 결과로 기록되는지 확인
@@ -150,6 +189,10 @@ class DeferredAiPredictionClient implements AiPredictionClient {
 
     pending.resolve(validResponse(branchNameFrom(pending.prompt)))
   }
+}
+
+function flushTasks(): Promise<void> {
+  return new Promise(resolve => setImmediate(resolve))
 }
 
 function branchNameFrom(prompt: AiPredictionPrompt): string {

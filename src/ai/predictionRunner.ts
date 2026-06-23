@@ -8,6 +8,9 @@ import type {
   AiPredictionRunOptions
 } from "./types.js"
 
+// Gemini free tier rate limit을 줄이기 위해 선택된 AI 호출 사이에 둘 내부 대기 시간
+const DEFAULT_AI_PREDICTION_DELAY_MS = 60000
+
 // 대상 선택, prompt 생성, provider 호출, 응답 검증을 branch별 AI prediction 결과로 연결
 export async function predict(
   payloads: AiPredictionEvidencePayload[],
@@ -29,6 +32,11 @@ export async function predict(
     }
 
     results.push(await predictedResultFor(payload, client, options))
+    targets.delete(payload)
+
+    if (0 < targets.size) {
+      await delay(DEFAULT_AI_PREDICTION_DELAY_MS)
+    }
   }
 
   return results
@@ -64,4 +72,13 @@ async function predictedResultFor(
 // unknown error를 report 가능한 문자열로 변환
 function errorMessageFor(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+// 선택된 AI provider 호출 사이에 간격을 두어 rate limit 진입 가능성을 낮춤
+function delay(delayMs: number): Promise<void> {
+  if (delayMs <= 0) {
+    return Promise.resolve()
+  }
+
+  return new Promise(resolve => setTimeout(resolve, delayMs))
 }
