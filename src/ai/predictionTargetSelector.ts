@@ -10,5 +10,8 @@ export const DEFAULT_AI_PREDICTION_TARGET_STATUS = BranchRiskStatus.Critical
 export function select(
   payloads: AiPredictionEvidencePayload[]
 ): AiPredictionEvidencePayload[] {
-  return payloads.filter(payload => payload.possibility.status === DEFAULT_AI_PREDICTION_TARGET_STATUS)
+  return payloads.filter(payload =>
+    payload.possibility.status === DEFAULT_AI_PREDICTION_TARGET_STATUS &&
+    !payload.possibility.reasons.some(reason => reason.code === "confirmed_conflict")
+  )
 }

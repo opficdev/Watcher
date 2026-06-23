@@ -9,6 +9,7 @@ import {
   type BranchRisk,
   type GitMergeSignal
 } from "../../src/index.js"
+import type { BranchRiskReasonCode } from "../../src/risks/types.js"
 
 // 기본 기준으로 critical possibility만 AI prediction 대상으로 선택하는지 확인
 test("selects critical targets by default", () => {
@@ -39,14 +40,24 @@ test("includes critical status targets", () => {
   assert.deepEqual(selected.map(target => target.branch.name), ["feature/critical"])
 })
 
+// 이미 Git conflict가 확정된 branch는 AI prediction 없이 deterministic report만 사용하는지 확인
+test("skips confirmed conflict targets", () => {
+  const selected = selectAiPredictionTargets([
+    payload("feature/conflict", 100, BranchRiskStatus.Critical, "confirmed_conflict")
+  ])
+
+  assert.deepEqual(selected, [])
+})
+
 function payload(
   branchName: string,
   score: number,
-  status: BranchRiskStatus
+  status: BranchRiskStatus,
+  reasonCode: BranchRiskReasonCode = "merge_check_failed"
 ): AiPredictionEvidencePayload {
   return {
     branch: branch(branchName),
-    possibility: possibility(branchName, score, status),
+    possibility: possibility(branchName, score, status, reasonCode),
     gitSignal: gitSignal(branchName),
     changedHunks: []
   }
@@ -64,7 +75,8 @@ function branch(name: string): BranchContext {
 function possibility(
   branchName: string,
   score: number,
-  status: BranchRiskStatus
+  status: BranchRiskStatus,
+  reasonCode: BranchRiskReasonCode
 ): BranchRisk {
   return {
     branchName,
@@ -72,7 +84,7 @@ function possibility(
     score,
     status,
     reasons: [{
-      code: "merge_check_failed",
+      code: reasonCode,
       message: "virtual merge 확인에 실패함",
       scoreImpact: score
     }]
