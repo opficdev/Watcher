@@ -8,6 +8,7 @@ import {
   type AiPredictionPrompt,
   type BranchContext,
   type BranchRisk,
+  type BranchRiskReasonCode,
   type GitMergeSignal
 } from "../../src/index.js"
 
@@ -36,6 +37,19 @@ test("skips non-critical payloads", async () => {
   ], client)
 
   assert.deepEqual(results.map(result => result.status), ["skipped"])
+  assert.equal(results[0]?.status === "skipped" ? results[0].reason : undefined, "not_target")
+  assert.equal(client.prompts.length, 0)
+})
+
+// 이미 Git conflict가 확정된 branch는 AI prediction을 생략하고 확정 충돌 사유를 기록하는지 확인
+test("records confirmed conflict skip reason", async () => {
+  const client = new AiPredictionClientSpy()
+  const [result] = await predictMergeRisksWithAi([
+    payload("feature/conflict", 100, BranchRiskStatus.Critical, "confirmed_conflict")
+  ], client)
+
+  assert.equal(result?.status, "skipped")
+  assert.equal(result?.status === "skipped" ? result.reason : undefined, "confirmed_conflict")
   assert.equal(client.prompts.length, 0)
 })
 
@@ -208,11 +222,12 @@ function branchNameFrom(prompt: AiPredictionPrompt): string {
 function payload(
   branchName: string,
   score: number,
-  status: BranchRiskStatus
+  status: BranchRiskStatus,
+  reasonCode: BranchRiskReasonCode = "same_hunk_overlap"
 ): AiPredictionEvidencePayload {
   return {
     branch: branch(branchName),
-    possibility: possibility(branchName, score, status),
+    possibility: possibility(branchName, score, status, reasonCode),
     gitSignal: gitSignal(branchName),
     changedHunks: []
   }
@@ -230,7 +245,8 @@ function branch(name: string): BranchContext {
 function possibility(
   branchName: string,
   score: number,
-  status: BranchRiskStatus
+  status: BranchRiskStatus,
+  reasonCode: BranchRiskReasonCode
 ): BranchRisk {
   return {
     branchName,
@@ -238,7 +254,7 @@ function possibility(
     score,
     status,
     reasons: [{
-      code: "same_hunk_overlap",
+      code: reasonCode,
       message: "다른 branch와 같은 hunk를 수정함",
       scoreImpact: score
     }]

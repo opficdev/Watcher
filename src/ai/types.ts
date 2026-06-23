@@ -46,7 +46,7 @@ export type AiPredictionSkippedResult = {
   status: "skipped"
   branchName: string
   baseBranch: string
-  reason: "below_threshold"
+  reason: "not_target" | "confirmed_conflict"
 }
 
 export type AiPredictionFailedResult = {

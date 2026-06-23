@@ -182,6 +182,10 @@ function geminiRequestBodyFor(prompt: AiPredictionPrompt): Record<string, unknow
 
 // 운영 환경에서는 retry 사이에 실제로 대기
 function delay(delayMs: number): Promise<void> {
+  if (delayMs <= 0) {
+    return Promise.resolve()
+  }
+
   return new Promise(resolve => setTimeout(resolve, delayMs))
 }
 

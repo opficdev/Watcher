@@ -26,7 +26,7 @@ export async function predict(
         status: "skipped",
         branchName: payload.branch.name,
         baseBranch: payload.branch.baseBranch,
-        reason: "below_threshold"
+        reason: skippedReasonFor(payload)
       })
       continue
     }
@@ -72,6 +72,13 @@ async function predictedResultFor(
 // unknown error를 report 가능한 문자열로 변환
 function errorMessageFor(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+// AI prediction 대상이 아닌 branch의 생략 사유를 report 가능한 값으로 변환
+function skippedReasonFor(payload: AiPredictionEvidencePayload): "not_target" | "confirmed_conflict" {
+  return payload.possibility.reasons.some(reason => reason.code === "confirmed_conflict")
+    ? "confirmed_conflict"
+    : "not_target"
 }
 
 // 선택된 AI provider 호출 사이에 간격을 두어 rate limit 진입 가능성을 낮춤

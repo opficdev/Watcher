@@ -81,12 +81,12 @@ test("formats skipped AI result", () => {
     status: "skipped",
     branchName: "feature/risk",
     baseBranch: "main",
-    reason: "below_threshold"
+    reason: "not_target"
   }))
 
   assert.match(markdown, /- ai prediction:/)
   assert.match(markdown, /- status: `skipped`/)
-  assert.match(markdown, /- reason: `below_threshold`/)
+  assert.match(markdown, /- reason: `not_target`/)
 })
 
 // AI failed 결과를 deterministic report 유지 상태로 표시하는지 확인

@@ -128,7 +128,7 @@ function predictedLinesFor(result: AiPredictionPredictedResult): string[] {
   return lines
 }
 
-// threshold 미달로 AI prediction을 생략한 이유를 표시
+// AI prediction을 생략한 이유를 표시
 function skippedLinesFor(result: AiPredictionSkippedResult): string[] {
   return [
     "- ai prediction:",
