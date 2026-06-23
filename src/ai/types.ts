@@ -14,7 +14,13 @@ export type AiPredictionEvidencePayload = {
 export type AiPredictionPrompt = {
   systemPrompt: string
   userPrompt: string
+  responseShape?: AiPredictionPromptResponseShape
 }
+
+// provider가 structured output schema를 고를 때 사용할 응답 형태
+export type AiPredictionPromptResponseShape =
+  | "prediction"
+  | "predictionBatch"
 
 // prompt 호출자가 provider나 실행 환경에 맞게 system prompt를 교체하기 위한 설정
 export type AiPredictionPromptBuildOptions = {
@@ -61,9 +67,7 @@ export type AiPrediction = {
   branchName: string
   baseBranch: string
   prediction: string
-  confidence: number
   recommendedActions: AiRecommendedAction[]
-  falsePositiveNotes: string[]
 }
 
 // AI가 제안하는 다음 action과 그 action이 필요한 근거

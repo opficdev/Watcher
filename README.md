@@ -99,17 +99,17 @@ Watcher는 merge 가능/불가능을 단정하지 않고 branch별 signal을 충
 
 `confirmed_conflict`는 최상위 signal입니다. 이 signal이 있으면 다른 reason을 추가로 합산하지 않고 `critical` risk로 처리합니다.
 
-각 reason은 report에 code, message, score impact, 관련 file, 관련 branch, 관련 check metadata로 표시됩니다. 이 정보가 AI prediction에 전달되는 정제된 evidence입니다.
+각 reason은 report에 code, message, score impact, 관련 file, 관련 branch, 관련 check metadata로 표시됩니다. 다만 `same_hunk_overlap`이 있는 branch에서는 중복되는 `same_file_overlap`의 file, branch 목록을 다시 반복하지 않습니다. 이 정보가 AI prediction에 전달되는 정제된 evidence입니다.
 
 ## AI-assisted prediction
 
-AI prediction은 deterministic possibility score를 대체하지 않습니다. Watcher는 deterministic evidence를 Gemini API에 전달하고 AI는 실무 관점의 prediction, confidence, recommended actions, false positive notes를 추가합니다.
+AI prediction은 deterministic possibility score를 대체하지 않습니다. Watcher는 deterministic evidence를 Gemini API에 전달하고 AI는 실무 관점의 prediction과 recommended actions를 추가합니다.
 
 기본 AI provider는 Gemini API입니다. consumer repository에는 `GEMINI_API_KEY` secret을 설정해야 합니다.
 
 AI prediction 대상은 기본적으로 `critical` possibility입니다. 이미 virtual merge에서 conflict가 확정된 branch는 AI 호출 없이 deterministic report만 사용합니다. 그 외 낮은 status의 branch는 AI 호출을 생략하고 `skipped` 상태로 report에 표시됩니다.
 
-Gemini free tier rate limit을 줄이기 위해 선택된 branch prediction은 순차 실행하며 기본적으로 호출 사이에 60초를 대기합니다.
+Gemini free tier의 RPM/RPD 사용량을 줄이기 위해 선택된 branch prediction은 report 단위 batch 요청으로 한 번에 실행합니다.
 
 AI prediction 결과는 다음 상태 중 하나입니다.
 
@@ -120,6 +120,8 @@ AI prediction 결과는 다음 상태 중 하나입니다.
 | `failed` | provider 호출이나 응답 검증에 실패해 branch 단위 실패로 격리함 |
 
 AI provider가 실패해도 deterministic possibility report는 유지됩니다. 실패한 branch는 `failed` 상태와 error message를 report에 포함합니다.
+
+Report에는 `Low` section, AI prediction `skipped` 상태, branch `updated` 시각, Gemini error 요약을 유지합니다. Pull Request metadata는 내부 evidence로만 사용할 수 있으며 Markdown report에는 출력하지 않습니다.
 
 ## Report channel
 

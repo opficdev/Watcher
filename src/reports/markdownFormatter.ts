@@ -38,13 +38,19 @@ export function format(report: MergeRiskReport): string {
 
 // branch 하나의 score, metadata, reason을 Markdown block으로 구성
 function linesForItem(item: MergeRiskReportItem): string[] {
+  const sameHunkFiles = new Set(item.reasons
+    .filter(reason => reason.code === "same_hunk_overlap")
+    .flatMap(reason => reason.files ?? []))
+
   return [
     "",
     `#### ${code(item.branchName)}`,
     `- score/status: ${code(item.score.toString())} / ${code(item.status)}`,
     ...metadataLinesFor(item),
     "- reasons:",
-    ...item.reasons.flatMap(reason => linesForReason(reason)),
+    ...item.reasons
+      .map(reason => compactSameFileOverlapReason(reason, sameHunkFiles))
+      .flatMap(reason => linesForReason(reason)),
     ...aiPredictionLinesFor(item.aiPrediction)
   ]
 }
@@ -61,12 +67,25 @@ function metadataLinesFor(item: MergeRiskReportItem): string[] {
     lines.push(`- updated: ${code(item.updatedAt.toISOString())}`)
   }
 
-  if (item.pullRequest) {
-    const title = escapeLinkText(item.pullRequest.title)
-    lines.push(`- pull request: [#${item.pullRequest.number} ${title}](${item.pullRequest.url})`)
+  return lines
+}
+
+// same hunk로 이미 설명된 file만 same file reason에서 제거해 중복 표시를 줄임
+function compactSameFileOverlapReason(
+  reason: BranchRiskReason,
+  sameHunkFiles: Set<string>
+): BranchRiskReason {
+  if (reason.code !== "same_file_overlap" || !reason.files?.length || sameHunkFiles.size === 0) {
+    return reason
   }
 
-  return lines
+  const files = reason.files.filter(file => !sameHunkFiles.has(file))
+
+  return {
+    ...reason,
+    files,
+    branches: 0 < files.length ? reason.branches : undefined
+  }
 }
 
 // deterministic reason의 code, score 영향, 관련 metadata를 Markdown bullet로 구성
@@ -107,22 +126,16 @@ function aiPredictionLinesFor(prediction: AiPredictionResult | undefined): strin
   return failedLinesFor(prediction)
 }
 
-// AI가 생성한 prediction, confidence, action, false positive note를 표시
+// AI가 생성한 prediction과 action을 표시
 function predictedLinesFor(result: AiPredictionPredictedResult): string[] {
   const lines = [
     "- ai prediction:",
-    `  - prediction: ${result.prediction.prediction}`,
-    `  - confidence: ${code(result.prediction.confidence.toString())}`
+    `  - prediction: ${result.prediction.prediction}`
   ]
 
   if (result.prediction.recommendedActions.length) {
     lines.push("  - recommended actions:")
     lines.push(...result.prediction.recommendedActions.flatMap(action => actionLinesFor(action)))
-  }
-
-  if (result.prediction.falsePositiveNotes.length) {
-    lines.push("  - false positive notes:")
-    lines.push(...result.prediction.falsePositiveNotes.map(note => `    - ${note}`))
   }
 
   return lines
@@ -157,11 +170,6 @@ function actionLinesFor(action: AiRecommendedAction): string[] {
   }
 
   return lines
-}
-
-// Markdown link text 안의 대괄호가 링크 경계를 깨지 않도록 escape
-function escapeLinkText(value: string): string {
-  return value.replaceAll("[", "\\[").replaceAll("]", "\\]")
 }
 
 // Markdown inline code 안의 backtick보다 긴 delimiter를 사용해 code span을 구성

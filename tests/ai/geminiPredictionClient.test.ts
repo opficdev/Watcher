@@ -84,6 +84,41 @@ test("sends prompt to Gemini generateContent endpoint", async () => {
   assert.equal(body.generationConfig.responseFormat.text.mimeType, "APPLICATION_JSON")
 })
 
+// batch prompt는 Gemini structured output schema도 predictions 배열로 요청하는지 확인
+test("sends batch response schema to Gemini", async () => {
+  const fetcher = fetchSpy(validGeminiBatchResponse())
+  const client = new GeminiPredictionClient({
+    apiKey: "gemini-key",
+    fetch: fetcher
+  })
+
+  await client.predict(batchPrompt())
+
+  const request = fetcher.requests[0]
+  const body = JSON.parse(request?.init.body as string) as {
+    generationConfig: {
+      responseFormat: {
+        text: {
+          schema: {
+            properties: {
+              predictions?: {
+                items?: {
+                  properties?: Record<string, unknown>
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  assert.notEqual(body.generationConfig.responseFormat.text.schema.properties.predictions, undefined)
+  const properties = body.generationConfig.responseFormat.text.schema.properties.predictions?.items?.properties
+  assert.equal(properties?.confidence, undefined)
+  assert.equal(properties?.falsePositiveNotes, undefined)
+})
+
 // Gemini 503 계열 일시 실패는 exponential backoff 후 재시도하는지 확인
 test("retries Gemini high demand failures with exponential backoff", async () => {
   const fetcher = fetchSequenceSpy([
@@ -354,6 +389,14 @@ function prompt(): AiPredictionPrompt {
   }
 }
 
+function batchPrompt(): AiPredictionPrompt {
+  return {
+    systemPrompt: "Return JSON only.",
+    userPrompt: "{\"branches\":[{\"branch\":\"feature/a\"}]}",
+    responseShape: "predictionBatch"
+  }
+}
+
 // Gemini generateContent가 반환하는 JSON text 응답 fixture
 function validGeminiResponse(): unknown {
   return {
@@ -367,19 +410,31 @@ function validGeminiResponse(): unknown {
   }
 }
 
+function validGeminiBatchResponse(): unknown {
+  return {
+    candidates: [{
+      content: {
+        parts: [{
+          text: JSON.stringify({
+            predictions: [validPrediction()]
+          })
+        }]
+      }
+    }]
+  }
+}
+
 // Watcher AI prediction schema를 만족하는 parsed JSON fixture
 function validPrediction(): unknown {
   return {
     branchName: "feature/a",
     baseBranch: "main",
     prediction: "shared file 변경이 겹쳐 rebase 확인이 필요함",
-    confidence: 82,
     recommendedActions: [{
       title: "base branch rebase",
       description: "shared file 변경을 먼저 rebase해 실제 conflict 여부를 확인함",
       priority: "high",
       files: ["src/shared.ts"]
-    }],
-    falsePositiveNotes: []
+    }]
   }
 }

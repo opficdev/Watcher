@@ -161,6 +161,10 @@ export function createDefaultAiPredictionClient(
 
 // Watcher가 검증할 AiPrediction shape를 Gemini structured output schema로 전달
 function geminiRequestBodyFor(prompt: AiPredictionPrompt): Record<string, unknown> {
+  const schema = prompt.responseShape === "predictionBatch"
+    ? aiPredictionBatchSchema()
+    : aiPredictionSchema()
+
   return {
     systemInstruction: {
       parts: [{ text: prompt.systemPrompt }]
@@ -173,7 +177,7 @@ function geminiRequestBodyFor(prompt: AiPredictionPrompt): Record<string, unknow
       responseFormat: {
         text: {
           mimeType: "APPLICATION_JSON",
-          schema: aiPredictionSchema()
+          schema
         }
       }
     }
@@ -292,6 +296,22 @@ function geminiTextFor(response: GeminiGenerateContentResponse): string {
 }
 
 // Gemini가 Watcher prediction contract에 맞는 JSON을 반환하도록 요청하는 schema
+function aiPredictionBatchSchema(): Record<string, unknown> {
+  return {
+    type: "object",
+    properties: {
+      predictions: {
+        type: "array",
+        items: aiPredictionSchema()
+      }
+    },
+    required: [
+      "predictions"
+    ]
+  }
+}
+
+// Gemini가 Watcher prediction 하나의 contract에 맞는 JSON을 반환하도록 요청하는 schema
 function aiPredictionSchema(): Record<string, unknown> {
   return {
     type: "object",
@@ -299,21 +319,15 @@ function aiPredictionSchema(): Record<string, unknown> {
       branchName: { type: "string" },
       baseBranch: { type: "string" },
       prediction: { type: "string" },
-      confidence: { type: "number" },
       recommendedActions: {
         type: "array",
         items: recommendedActionSchema()
-      },
-      falsePositiveNotes: {
-        type: "array",
-        items: { type: "string" }
       }
     },
     required: [
       "branchName",
       "baseBranch",
-      "prediction",
-      "confidence"
+      "prediction"
     ]
   }
 }

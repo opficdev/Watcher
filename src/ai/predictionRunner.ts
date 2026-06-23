@@ -1,71 +1,52 @@
-import { build as buildPrompt } from "./predictionPromptBuilder.js"
+import { buildBatch as buildBatchPrompt } from "./predictionPromptBuilder.js"
 import { select as selectTargets } from "./predictionTargetSelector.js"
-import { validate as validateResponse } from "./predictionResponseValidator.js"
+import { validateBatch as validateBatchResponse } from "./predictionResponseValidator.js"
 import type {
+  AiPrediction,
   AiPredictionClient,
   AiPredictionEvidencePayload,
   AiPredictionResult,
   AiPredictionRunOptions
 } from "./types.js"
 
-// Gemini free tier rate limit을 줄이기 위해 선택된 AI 호출 사이에 둘 내부 대기 시간
-const DEFAULT_AI_PREDICTION_DELAY_MS = 60000
-
-// 대상 선택, prompt 생성, provider 호출, 응답 검증을 branch별 AI prediction 결과로 연결
+// 대상 선택, batch prompt 생성, provider 호출, 응답 검증을 branch별 AI prediction 결과로 연결
 export async function predict(
   payloads: AiPredictionEvidencePayload[],
   client: AiPredictionClient,
   options: AiPredictionRunOptions = {}
 ): Promise<AiPredictionResult[]> {
-  const targets = new Set(selectTargets(payloads))
-  const results: AiPredictionResult[] = []
+  const targets = selectTargets(payloads)
+  const targetSet = new Set(targets)
 
-  for (const payload of payloads) {
-    if (!targets.has(payload)) {
-      results.push({
-        status: "skipped",
-        branchName: payload.branch.name,
-        baseBranch: payload.branch.baseBranch,
-        reason: skippedReasonFor(payload)
-      })
-      continue
-    }
-
-    results.push(await predictedResultFor(payload, client, options))
-    targets.delete(payload)
-
-    if (0 < targets.size) {
-      await delay(DEFAULT_AI_PREDICTION_DELAY_MS)
-    }
+  if (targets.length === 0) {
+    return payloads.map(skippedResultFor)
   }
 
-  return results
+  const predictedResults = await predictedResultsFor(targets, client, options)
+
+  return payloads.map(payload => targetSet.has(payload)
+    ? predictedResults.get(payload) ?? failedResultFor(payload, "AI prediction response is missing")
+    : skippedResultFor(payload)
+  )
 }
 
-// provider 호출과 schema 검증 실패를 branch 단위 failed 결과로 격리
-async function predictedResultFor(
-  payload: AiPredictionEvidencePayload,
+// provider 호출과 schema 검증 실패를 선택된 branch 단위 failed 결과로 격리
+async function predictedResultsFor(
+  targets: AiPredictionEvidencePayload[],
   client: AiPredictionClient,
   options: AiPredictionRunOptions
-): Promise<AiPredictionResult> {
+): Promise<Map<AiPredictionEvidencePayload, AiPredictionResult>> {
   try {
-    const prompt = buildPrompt(payload, options)
+    const prompt = buildBatchPrompt(targets, options)
     const response = await client.predict(prompt)
-    const prediction = validateResponse(response)
+    const predictions = validateBatchResponse(response)
 
-    return {
-      status: "predicted",
-      branchName: payload.branch.name,
-      baseBranch: payload.branch.baseBranch,
-      prediction
-    }
+    return resultsByPayloadFor(targets, predictions)
   } catch (error) {
-    return {
-      status: "failed",
-      branchName: payload.branch.name,
-      baseBranch: payload.branch.baseBranch,
-      errorMessage: errorMessageFor(error)
-    }
+    return new Map(targets.map(target => [
+      target,
+      failedResultFor(target, errorMessageFor(error))
+    ]))
   }
 }
 
@@ -81,11 +62,63 @@ function skippedReasonFor(payload: AiPredictionEvidencePayload): "not_target" | 
     : "not_target"
 }
 
-// 선택된 AI provider 호출 사이에 간격을 두어 rate limit 진입 가능성을 낮춤
-function delay(delayMs: number): Promise<void> {
-  if (delayMs <= 0) {
-    return Promise.resolve()
+// AI prediction 대상이 아닌 branch를 skipped 결과로 변환
+function skippedResultFor(payload: AiPredictionEvidencePayload): AiPredictionResult {
+  return {
+    status: "skipped",
+    branchName: payload.branch.name,
+    baseBranch: payload.branch.baseBranch,
+    reason: skippedReasonFor(payload)
   }
+}
 
-  return new Promise(resolve => setTimeout(resolve, delayMs))
+// provider 실패나 응답 누락을 branch별 failed 결과로 변환
+function failedResultFor(
+  payload: AiPredictionEvidencePayload,
+  errorMessage: string
+): AiPredictionResult {
+  return {
+    status: "failed",
+    branchName: payload.branch.name,
+    baseBranch: payload.branch.baseBranch,
+    errorMessage
+  }
+}
+
+// batch 응답을 원래 target payload와 매칭해 branch별 결과로 복원
+function resultsByPayloadFor(
+  targets: AiPredictionEvidencePayload[],
+  predictions: AiPrediction[]
+): Map<AiPredictionEvidencePayload, AiPredictionResult> {
+  const predictionsByBranch = new Map(predictions.map(prediction => [
+    predictionKeyFor(prediction.branchName, prediction.baseBranch),
+    prediction
+  ]))
+
+  return new Map(targets.map(target => {
+    const prediction = predictionsByBranch.get(predictionKeyFor(
+      target.branch.name,
+      target.branch.baseBranch
+    ))
+
+    return [
+      target,
+      prediction
+        ? {
+          status: "predicted",
+          branchName: target.branch.name,
+          baseBranch: target.branch.baseBranch,
+          prediction
+        }
+        : failedResultFor(target, "AI prediction response is missing")
+    ]
+  }))
+}
+
+// branch 이름만 같은 다른 base branch와 섞이지 않도록 base branch까지 포함해 매칭
+function predictionKeyFor(
+  branchName: string,
+  baseBranch: string
+): string {
+  return `${baseBranch}\u0000${branchName}`
 }
