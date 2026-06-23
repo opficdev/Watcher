@@ -1,59 +1,63 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import {
-  DEFAULT_AI_PREDICTION_MINIMUM_SCORE,
+  BranchRiskStatus,
+  DEFAULT_AI_PREDICTION_TARGET_STATUS,
   selectAiPredictionTargets,
   type AiPredictionEvidencePayload,
   type BranchContext,
   type BranchRisk,
   type GitMergeSignal
 } from "../../src/index.js"
+import type { BranchRiskReasonCode } from "../../src/risks/types.js"
 
-// 기본 기준으로 medium 이상 score만 AI prediction 대상으로 선택하는지 확인
-test("selects medium or higher score targets by default", () => {
+// 기본 기준으로 critical possibility만 AI prediction 대상으로 선택하는지 확인
+test("selects critical targets by default", () => {
   const selected = selectAiPredictionTargets([
-    payload("feature/low", 20),
-    payload("feature/medium", DEFAULT_AI_PREDICTION_MINIMUM_SCORE),
-    payload("feature/high", 55)
+    payload("feature/low", 20, BranchRiskStatus.Low),
+    payload("feature/high", 55, BranchRiskStatus.High),
+    payload("feature/critical", 100, DEFAULT_AI_PREDICTION_TARGET_STATUS)
   ])
-
-  assert.deepEqual(selected.map(target => target.branch.name), [
-    "feature/medium",
-    "feature/high"
-  ])
-})
-
-// caller가 지정한 minimumScore 기준으로 AI prediction 대상을 제한하는지 확인
-test("selects targets with custom minimum score", () => {
-  const selected = selectAiPredictionTargets([
-    payload("feature/medium", 25),
-    payload("feature/high", 55),
-    payload("feature/critical", 100)
-  ], {
-    minimumScore: 80
-  })
 
   assert.deepEqual(selected.map(target => target.branch.name), ["feature/critical"])
 })
 
-// threshold와 같은 score는 AI prediction 대상에 포함되는지 확인
-test("includes targets at the minimum score boundary", () => {
+// score가 높아도 critical status가 아니면 Gemini 호출 대상에서 제외되는지 확인
+test("skips high score non-critical targets", () => {
   const selected = selectAiPredictionTargets([
-    payload("feature/boundary", 50)
-  ], {
-    minimumScore: 50
-  })
+    payload("feature/high", 90, BranchRiskStatus.High)
+  ])
 
-  assert.deepEqual(selected.map(target => target.branch.name), ["feature/boundary"])
+  assert.deepEqual(selected, [])
+})
+
+// critical status면 score 값과 별개로 AI prediction 대상에 포함되는지 확인
+test("includes critical status targets", () => {
+  const selected = selectAiPredictionTargets([
+    payload("feature/critical", 80, BranchRiskStatus.Critical)
+  ])
+
+  assert.deepEqual(selected.map(target => target.branch.name), ["feature/critical"])
+})
+
+// 이미 Git conflict가 확정된 branch는 AI prediction 없이 deterministic report만 사용하는지 확인
+test("skips confirmed conflict targets", () => {
+  const selected = selectAiPredictionTargets([
+    payload("feature/conflict", 100, BranchRiskStatus.Critical, "confirmed_conflict")
+  ])
+
+  assert.deepEqual(selected, [])
 })
 
 function payload(
   branchName: string,
-  score: number
+  score: number,
+  status: BranchRiskStatus,
+  reasonCode: BranchRiskReasonCode = "merge_check_failed"
 ): AiPredictionEvidencePayload {
   return {
     branch: branch(branchName),
-    possibility: possibility(branchName, score),
+    possibility: possibility(branchName, score, status, reasonCode),
     gitSignal: gitSignal(branchName),
     changedHunks: []
   }
@@ -70,15 +74,17 @@ function branch(name: string): BranchContext {
 
 function possibility(
   branchName: string,
-  score: number
+  score: number,
+  status: BranchRiskStatus,
+  reasonCode: BranchRiskReasonCode
 ): BranchRisk {
   return {
     branchName,
     baseBranch: "main",
     score,
-    status: "medium",
+    status,
     reasons: [{
-      code: "merge_check_failed",
+      code: reasonCode,
       message: "virtual merge 확인에 실패함",
       scoreImpact: score
     }]

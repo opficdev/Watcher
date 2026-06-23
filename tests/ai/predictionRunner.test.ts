@@ -1,41 +1,24 @@
-import test from "node:test"
+import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import {
+  BranchRiskStatus,
   predictMergeRisksWithAi,
   type AiPredictionClient,
   type AiPredictionEvidencePayload,
   type AiPredictionPrompt,
   type BranchContext,
   type BranchRisk,
+  type BranchRiskReasonCode,
   type GitMergeSignal
 } from "../../src/index.js"
 
-// threshold 이상 branch만 AI client로 prediction을 요청하는지 확인
-test("predicts selected merge risk payloads", async () => {
+// critical branch만 AI client로 prediction을 요청하는지 확인
+test("predicts selected critical merge risk payloads", async () => {
   const client = new AiPredictionClientSpy()
   const results = await predictMergeRisksWithAi([
-    payload("feature/low", 20),
-    payload("feature/high", 55)
+    payload("feature/high", 55, BranchRiskStatus.High),
+    payload("feature/critical", 100, BranchRiskStatus.Critical)
   ], client)
-
-  assert.deepEqual(results.map(result => result.status), ["skipped", "predicted"])
-  assert.equal(client.prompts.length, 1)
-  const predicted = results[1]
-  assert.equal(
-    predicted?.status === "predicted" ? predicted.prediction.branchName : undefined,
-    "feature/high"
-  )
-})
-
-// custom threshold를 runner 옵션으로 전달할 수 있는지 확인
-test("uses custom prediction threshold", async () => {
-  const client = new AiPredictionClientSpy()
-  const results = await predictMergeRisksWithAi([
-    payload("feature/high", 55),
-    payload("feature/critical", 100)
-  ], client, {
-    minimumScore: 80
-  })
 
   assert.deepEqual(results.map(result => result.status), ["skipped", "predicted"])
   assert.equal(client.prompts.length, 1)
@@ -46,27 +29,94 @@ test("uses custom prediction threshold", async () => {
   )
 })
 
-// 선택된 branch prediction들이 서로 기다리지 않고 병렬로 시작되는지 확인
-test("starts selected predictions in parallel", async () => {
-  const client = new DeferredAiPredictionClient()
-  const running = predictMergeRisksWithAi([
-    payload("feature/a", 55),
-    payload("feature/b", 80)
+// score가 높아도 critical status가 아니면 AI prediction을 생략하는지 확인
+test("skips non-critical payloads", async () => {
+  const client = new AiPredictionClientSpy()
+  const results = await predictMergeRisksWithAi([
+    payload("feature/high", 90, BranchRiskStatus.High)
   ], client)
 
-  await client.waitForPrompts(2)
-  assert.equal(client.prompts.length, 2)
+  assert.deepEqual(results.map(result => result.status), ["skipped"])
+  assert.equal(results[0]?.status === "skipped" ? results[0].reason : undefined, "not_target")
+  assert.equal(client.prompts.length, 0)
+})
 
-  client.resolveAll()
-  const results = await running
-  assert.deepEqual(results.map(result => result.status), ["predicted", "predicted"])
+// 이미 Git conflict가 확정된 branch는 AI prediction을 생략하고 확정 충돌 사유를 기록하는지 확인
+test("records confirmed conflict skip reason", async () => {
+  const client = new AiPredictionClientSpy()
+  const [result] = await predictMergeRisksWithAi([
+    payload("feature/conflict", 100, BranchRiskStatus.Critical, "confirmed_conflict")
+  ], client)
+
+  assert.equal(result?.status, "skipped")
+  assert.equal(result?.status === "skipped" ? result.reason : undefined, "confirmed_conflict")
+  assert.equal(client.prompts.length, 0)
+})
+
+// Gemini 무료 등급의 일시 실패를 줄이기 위해 선택된 branch prediction을 순차 실행하는지 확인
+test("runs selected predictions sequentially", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] })
+  const client = new DeferredAiPredictionClient()
+
+  try {
+    const running = predictMergeRisksWithAi([
+      payload("feature/a", 100, BranchRiskStatus.Critical),
+      payload("feature/b", 100, BranchRiskStatus.Critical)
+    ], client)
+
+    await client.waitForPrompts(1)
+    assert.equal(client.prompts.length, 1)
+
+    client.resolveNext()
+    await flushTasks()
+    mock.timers.tick(60000)
+    await flushTasks()
+    assert.equal(client.prompts.length, 2)
+
+    client.resolveNext()
+    const results = await running
+    assert.deepEqual(results.map(result => result.status), ["predicted", "predicted"])
+  } finally {
+    mock.timers.reset()
+  }
+})
+
+// 선택된 AI 호출 사이에 내부 기본 간격을 두는지 확인
+test("waits between selected predictions", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] })
+  const client = new DeferredAiPredictionClient()
+
+  try {
+    const running = predictMergeRisksWithAi([
+      payload("feature/a", 100, BranchRiskStatus.Critical),
+      payload("feature/b", 100, BranchRiskStatus.Critical)
+    ], client)
+
+    await client.waitForPrompts(1)
+    client.resolveNext()
+    await flushTasks()
+
+    mock.timers.tick(59999)
+    await flushTasks()
+    assert.equal(client.prompts.length, 1)
+
+    mock.timers.tick(1)
+    await flushTasks()
+    assert.equal(client.prompts.length, 2)
+
+    client.resolveNext()
+    await running
+    assert.equal(client.prompts.length, 2)
+  } finally {
+    mock.timers.reset()
+  }
 })
 
 // AI client 오류가 전체 실행 실패가 아니라 branch 단위 failed 결과로 기록되는지 확인
 test("records failed result when client throws", async () => {
   const client = new AiPredictionClientSpy(new Error("provider failed"))
   const [result] = await predictMergeRisksWithAi([
-    payload("feature/high", 55)
+    payload("feature/critical", 100, BranchRiskStatus.Critical)
   ], client)
 
   assert.equal(result?.status, "failed")
@@ -84,7 +134,7 @@ test("records failed result when response is invalid", async () => {
     falsePositiveNotes: []
   })
   const [result] = await predictMergeRisksWithAi([
-    payload("feature/high", 55)
+    payload("feature/critical", 100, BranchRiskStatus.Critical)
   ], client)
 
   assert.equal(result?.status, "failed")
@@ -95,7 +145,7 @@ test("records failed result when response is invalid", async () => {
 test("passes custom system prompt to client", async () => {
   const client = new AiPredictionClientSpy()
   await predictMergeRisksWithAi([
-    payload("feature/high", 55)
+    payload("feature/critical", 100, BranchRiskStatus.Critical)
   ], client, {
     systemPrompt: "Return compact JSON."
   })
@@ -144,11 +194,19 @@ class DeferredAiPredictionClient implements AiPredictionClient {
     }
   }
 
-  resolveAll(): void {
-    for (const pending of this.pending.splice(0)) {
-      pending.resolve(validResponse(branchNameFrom(pending.prompt)))
+  resolveNext(): void {
+    const pending = this.pending.shift()
+
+    if (!pending) {
+      throw new Error("No pending AI prediction")
     }
+
+    pending.resolve(validResponse(branchNameFrom(pending.prompt)))
   }
+}
+
+function flushTasks(): Promise<void> {
+  return new Promise(resolve => setImmediate(resolve))
 }
 
 function branchNameFrom(prompt: AiPredictionPrompt): string {
@@ -163,11 +221,13 @@ function branchNameFrom(prompt: AiPredictionPrompt): string {
 
 function payload(
   branchName: string,
-  score: number
+  score: number,
+  status: BranchRiskStatus,
+  reasonCode: BranchRiskReasonCode = "same_hunk_overlap"
 ): AiPredictionEvidencePayload {
   return {
     branch: branch(branchName),
-    possibility: possibility(branchName, score),
+    possibility: possibility(branchName, score, status, reasonCode),
     gitSignal: gitSignal(branchName),
     changedHunks: []
   }
@@ -184,15 +244,17 @@ function branch(name: string): BranchContext {
 
 function possibility(
   branchName: string,
-  score: number
+  score: number,
+  status: BranchRiskStatus,
+  reasonCode: BranchRiskReasonCode
 ): BranchRisk {
   return {
     branchName,
     baseBranch: "main",
     score,
-    status: "high",
+    status,
     reasons: [{
-      code: "same_hunk_overlap",
+      code: reasonCode,
       message: "다른 branch와 같은 hunk를 수정함",
       scoreImpact: score
     }]

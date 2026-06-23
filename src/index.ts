@@ -17,7 +17,7 @@ export { build as buildAiPredictionPrompt } from "./ai/predictionPromptBuilder.j
 export { DEFAULT_AI_PREDICTION_SYSTEM_PROMPT } from "./ai/promptTemplates.js"
 export { predict as predictMergeRisksWithAi } from "./ai/predictionRunner.js"
 export {
-  DEFAULT_AI_PREDICTION_MINIMUM_SCORE,
+  DEFAULT_AI_PREDICTION_TARGET_STATUS,
   select as selectAiPredictionTargets
 } from "./ai/predictionTargetSelector.js"
 export { validate as validateAiPredictionResponse } from "./ai/predictionResponseValidator.js"
@@ -45,7 +45,6 @@ export type {
   AiPredictionResult,
   AiPredictionRunOptions,
   AiPredictionSkippedResult,
-  AiPredictionTargetSelectionOptions,
   AiRecommendedAction,
   AiRecommendedActionPriority
 } from "./ai/types.js"

@@ -107,14 +107,16 @@ AI prediction은 deterministic possibility score를 대체하지 않습니다. W
 
 기본 AI provider는 Gemini API입니다. consumer repository에는 `GEMINI_API_KEY` secret을 설정해야 합니다.
 
-AI prediction 대상은 기본적으로 `medium` 이상 possibility입니다. 현재 기준으로 score가 25점 이상인 branch만 AI prediction 대상으로 선택됩니다. 낮은 score의 branch는 AI 호출을 생략하고 `skipped` 상태로 report에 표시됩니다.
+AI prediction 대상은 기본적으로 `critical` possibility입니다. 이미 virtual merge에서 conflict가 확정된 branch는 AI 호출 없이 deterministic report만 사용합니다. 그 외 낮은 status의 branch는 AI 호출을 생략하고 `skipped` 상태로 report에 표시됩니다.
+
+Gemini free tier rate limit을 줄이기 위해 선택된 branch prediction은 순차 실행하며 기본적으로 호출 사이에 60초를 대기합니다.
 
 AI prediction 결과는 다음 상태 중 하나입니다.
 
 | status | 의미 |
 | --- | --- |
 | `predicted` | Gemini API 응답을 검증했고 prediction과 recommended actions를 report에 포함함 |
-| `skipped` | deterministic possibility score가 threshold보다 낮아 AI 호출을 생략함 |
+| `skipped` | AI prediction 대상이 아니어서 provider 호출을 생략함 |
 | `failed` | provider 호출이나 응답 검증에 실패해 branch 단위 실패로 격리함 |
 
 AI provider가 실패해도 deterministic possibility report는 유지됩니다. 실패한 branch는 `failed` 상태와 error message를 report에 포함합니다.
@@ -187,7 +189,7 @@ npm test
 
 5. stdout report가 정상일 때만 consumer repository secret에 `DISCORD_WEBHOOK_URL`을 추가하고 같은 workflow를 다시 수동 실행합니다.
 
-Discord 메시지가 정상적으로 도착하면 consumer repository의 예시 workflow에 `schedule`과 `pull_request` trigger를 유지해 실서비스 실행으로 전환합니다.
+Discord 메시지가 정상적으로 도착하면 consumer repository의 예시 workflow에 `schedule` trigger를 유지해 실서비스 실행으로 전환합니다.
 
 ## Local test와 scheduled run 차이
 
@@ -199,12 +201,11 @@ scheduled run은 consumer repository의 실제 remote branch를 fetch하고, `ba
 
 | 증상 | 확인할 항목 |
 | --- | --- |
-| workflow가 시작되지 않음 | consumer workflow가 `pull_request`, `schedule`, `workflow_dispatch` 중 필요한 trigger를 가지고 있는지 확인 |
-| fork PR에서 실행되지 않음 | 예시 workflow의 `github.event.pull_request.head.repo.fork == false` 조건 확인 |
+| workflow가 시작되지 않음 | consumer workflow가 `schedule`, `workflow_dispatch` 중 필요한 trigger를 가지고 있는지 확인 |
 | checkout 또는 fetch 실패 | `WATCHER_GITHUB_TOKEN` 권한과 `contents: read` permission 확인 |
 | PR metadata가 비어 있음 | `pull-requests: read` permission과 commit에 연결된 PR 존재 여부 확인 |
 | check metadata가 비어 있음 | `checks: read` permission과 해당 branch head SHA의 check run 존재 여부 확인 |
-| AI prediction이 `skipped`로 표시됨 | deterministic possibility score가 기본 threshold인 25점 미만인지 확인 |
-| AI prediction이 `failed`로 표시됨 | `GEMINI_API_KEY` secret과 Gemini API 응답 형식 확인 |
+| AI prediction이 `skipped`로 표시됨 | deterministic possibility status가 `critical`인지와 `confirmed_conflict`가 아닌지 확인 |
+| AI prediction이 `failed`로 표시됨 | `GEMINI_API_KEY` secret, Gemini API 응답 형식, rate limit 상태 확인 |
 | Discord 전송이 되지 않음 | `DISCORD_WEBHOOK_URL` secret과 webhook channel 권한 확인 |
 | merge된 branch가 계속 감시됨 | GitHub `Automatically delete head branches` 설정과 원격 branch 삭제 상태 확인 |

@@ -37,6 +37,17 @@ test("rejects confidence outside report range", () => {
   )
 })
 
+// confidence가 소수면 report 의미가 모호하므로 AI 응답을 거부하는지 확인
+test("rejects fractional confidence", () => {
+  assert.throws(
+    () => validateAiPredictionResponse({
+      ...validResponse(),
+      confidence: 0.98
+    }),
+    /integer/
+  )
+})
+
 // action priority가 허용된 값이 아니면 AI 응답을 거부하는지 확인
 test("rejects invalid action priority", () => {
   assert.throws(

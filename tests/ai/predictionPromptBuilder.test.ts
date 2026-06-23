@@ -15,7 +15,11 @@ test("builds prompt that preserves deterministic possibility", () => {
 
   assert.equal(prompt.systemPrompt, DEFAULT_AI_PREDICTION_SYSTEM_PROMPT)
   assert.match(prompt.systemPrompt, /Do not recalculate or overwrite/)
+  assert.match(prompt.systemPrompt, /Do not describe the deterministic score as a probability/)
+  assert.match(prompt.systemPrompt, /Avoid phrases such as guaranteed, will cause, or will result/)
+  assert.match(prompt.systemPrompt, /Write prediction, recommended action titles, descriptions, and false positive notes in Korean/)
   assert.match(prompt.systemPrompt, /Return only JSON/)
+  assert.match(prompt.systemPrompt, /Use 98 for high confidence, not 0\.98 or 1/)
   assert.match(prompt.systemPrompt, /recommendedActions/)
 })
 

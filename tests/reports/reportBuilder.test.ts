@@ -143,7 +143,7 @@ test("keeps skipped AI result when present", () => {
     status: "skipped",
     branchName: "feature/skipped",
     baseBranch: "main",
-    reason: "below_threshold"
+    reason: "not_target"
   }
   const report = buildMergeRiskReport([
     input("feature/skipped", BranchRiskStatus.Low, 0, {}, prediction)
