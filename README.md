@@ -19,7 +19,7 @@ consumer repository에는 다음 secret을 설정합니다.
 | secret | 필수 여부 | 용도 |
 | --- | --- | --- |
 | `WATCHER_GITHUB_TOKEN` | 필수 | watched repository checkout, branch fetch, PR/check metadata 조회 |
-| `GEMINI_API_KEY` | 필수 | Gemini prediction 생성 |
+| `OPENAI_API_KEY` | 필수 | OpenAI prediction 생성 |
 | `DISCORD_WEBHOOK_URL` | 선택 | Discord webhook report 전송. 미설정 시 stdout으로 출력 |
 
 `WATCHER_GITHUB_TOKEN`은 watched repository를 checkout하고 branch, check, pull request metadata를 읽을 수 있어야 합니다. public repository라도 metadata 조회와 private repository 확장을 고려해 explicit token을 사용합니다.
@@ -103,25 +103,25 @@ Watcher는 merge 가능/불가능을 단정하지 않고 branch별 signal을 충
 
 ## AI-assisted prediction
 
-AI prediction은 deterministic possibility score를 대체하지 않습니다. Watcher는 deterministic evidence를 Gemini API에 전달하고 AI는 실무 관점의 prediction과 recommended actions를 추가합니다.
+AI prediction은 deterministic possibility score를 대체하지 않습니다. Watcher는 deterministic evidence를 OpenAI API에 전달하고 AI는 실무 관점의 prediction과 recommended actions를 추가합니다.
 
-기본 AI provider는 Gemini API입니다. consumer repository에는 `GEMINI_API_KEY` secret을 설정해야 합니다.
+기본 AI provider는 OpenAI Responses API입니다. consumer repository에는 `OPENAI_API_KEY` secret을 설정해야 합니다.
 
 AI prediction 대상은 기본적으로 `critical` possibility입니다. 이미 virtual merge에서 conflict가 확정된 branch는 AI 호출 없이 deterministic report만 사용합니다. 그 외 낮은 status의 branch는 AI 호출을 생략하고 `skipped` 상태로 report에 표시됩니다.
 
-Gemini free tier의 RPM/RPD 사용량을 줄이기 위해 선택된 branch prediction은 report 단위 batch 요청으로 한 번에 실행합니다.
+provider 호출량을 줄이기 위해 선택된 branch prediction은 report 단위 batch 요청으로 한 번에 실행합니다.
 
 AI prediction 결과는 다음 상태 중 하나입니다.
 
 | status | 의미 |
 | --- | --- |
-| `predicted` | Gemini API 응답을 검증했고 prediction과 recommended actions를 report에 포함함 |
+| `predicted` | OpenAI API 응답을 검증했고 prediction과 recommended actions를 report에 포함함 |
 | `skipped` | AI prediction 대상이 아니어서 provider 호출을 생략함 |
 | `failed` | provider 호출이나 응답 검증에 실패해 branch 단위 실패로 격리함 |
 
 AI provider가 실패해도 deterministic possibility report는 유지됩니다. 실패한 branch는 `failed` 상태와 error message를 report에 포함합니다.
 
-Report에는 `Low` section, AI prediction `skipped` 상태, branch `updated` 시각, Gemini error 요약을 유지합니다. Pull Request metadata는 내부 evidence로만 사용할 수 있으며 Markdown report에는 출력하지 않습니다.
+Report에는 `Low` section, AI prediction `skipped` 상태, branch `updated` 시각, provider error 요약을 유지합니다. Pull Request metadata는 내부 evidence로만 사용할 수 있으며 Markdown report에는 출력하지 않습니다.
 
 ## Report channel
 
@@ -139,9 +139,9 @@ npm run build
 npm test
 ```
 
-`npm test`는 compiled JavaScript test를 실행합니다. 테스트는 provider와 report channel을 mock으로 검증하므로 실제 GitHub, Gemini, Discord 호출을 수행하지 않습니다.
+`npm test`는 compiled JavaScript test를 실행합니다. 테스트는 provider와 report channel을 mock으로 검증하므로 실제 GitHub, OpenAI, Discord 호출을 수행하지 않습니다.
 
-실제 runner를 local에서 실행하려면 watched repository checkout과 secret 환경 변수가 필요합니다. 이 실행은 GitHub API, Gemini API, Discord webhook을 호출할 수 있으므로 필요한 경우에만 사용합니다.
+실제 runner를 local에서 실행하려면 watched repository checkout과 secret 환경 변수가 필요합니다. 이 실행은 GitHub API, OpenAI API, Discord webhook을 호출할 수 있으므로 필요한 경우에만 사용합니다.
 
 ```sh
 WATCHER_REPOSITORY=owner/repo \
@@ -151,7 +151,7 @@ WATCHER_DEFAULT_BRANCH=main \
 WATCHER_CRITICAL_FILE_PATTERNS='package-lock.json
 .github/workflows/**' \
 GITHUB_TOKEN=github-token \
-GEMINI_API_KEY=gemini-api-key \
+OPENAI_API_KEY=openai-api-key \
 DISCORD_WEBHOOK_URL=discord-webhook-url \
 npm run watch
 ```
@@ -182,12 +182,12 @@ npm test
 | secret | 테스트 기준 |
 | --- | --- |
 | `WATCHER_GITHUB_TOKEN` | 테스트 repository를 checkout하고 metadata를 읽을 수 있는 token |
-| `GEMINI_API_KEY` | Gemini API 호출 가능한 key |
+| `OPENAI_API_KEY` | OpenAI API 호출 가능한 key |
 | `DISCORD_WEBHOOK_URL` | 처음에는 설정하지 않음 |
 
 4. consumer repository의 Actions 화면에서 `Merge Risk Watch` workflow를 수동 실행하고 stdout report를 확인합니다.
 
-`DISCORD_WEBHOOK_URL`을 비워 두면 Discord로 전송하지 않고 GitHub Actions log에 Markdown report를 출력합니다. 이 단계에서 branch 수집, merge signal 수집, Gemini prediction, report 생성이 정상인지 확인합니다.
+`DISCORD_WEBHOOK_URL`을 비워 두면 Discord로 전송하지 않고 GitHub Actions log에 Markdown report를 출력합니다. 이 단계에서 branch 수집, merge signal 수집, OpenAI prediction, report 생성이 정상인지 확인합니다.
 
 5. stdout report가 정상일 때만 consumer repository secret에 `DISCORD_WEBHOOK_URL`을 추가하고 같은 workflow를 다시 수동 실행합니다.
 
@@ -197,7 +197,7 @@ Discord 메시지가 정상적으로 도착하면 consumer repository의 예시 
 
 local test는 Watcher 내부 로직이 기대한 입력을 처리하는지 확인합니다. GitHub Actions의 reusable workflow, repository checkout, remote branch fetch, 실제 API 권한, schedule timing은 검증하지 않습니다.
 
-scheduled run은 consumer repository의 실제 remote branch를 fetch하고, `base_branch`와 `default_branch`를 제외한 branch를 대상으로 merge signal과 metadata를 다시 수집합니다. 따라서 local test가 통과해도 consumer repository의 token permission, branch 정리 상태, Gemini API key, Discord webhook 상태가 잘못되면 scheduled run에서 실패할 수 있습니다.
+scheduled run은 consumer repository의 실제 remote branch를 fetch하고, `base_branch`와 `default_branch`를 제외한 branch를 대상으로 merge signal과 metadata를 다시 수집합니다. 따라서 local test가 통과해도 consumer repository의 token permission, branch 정리 상태, OpenAI API key, Discord webhook 상태가 잘못되면 scheduled run에서 실패할 수 있습니다.
 
 ## Troubleshooting
 
@@ -208,6 +208,6 @@ scheduled run은 consumer repository의 실제 remote branch를 fetch하고, `ba
 | PR metadata가 비어 있음 | `pull-requests: read` permission과 commit에 연결된 PR 존재 여부 확인 |
 | check metadata가 비어 있음 | `checks: read` permission과 해당 branch head SHA의 check run 존재 여부 확인 |
 | AI prediction이 `skipped`로 표시됨 | deterministic possibility status가 `critical`인지와 `confirmed_conflict`가 아닌지 확인 |
-| AI prediction이 `failed`로 표시됨 | `GEMINI_API_KEY` secret, Gemini API 응답 형식, rate limit 상태 확인 |
+| AI prediction이 `failed`로 표시됨 | `OPENAI_API_KEY` secret, OpenAI API 응답 형식, rate limit 상태 확인 |
 | Discord 전송이 되지 않음 | `DISCORD_WEBHOOK_URL` secret과 webhook channel 권한 확인 |
 | merge된 branch가 계속 감시됨 | GitHub `Automatically delete head branches` 설정과 원격 branch 삭제 상태 확인 |

@@ -30,8 +30,8 @@ on:
       watcher_github_token:
         description: "감시 대상 repository checkout, fetch, metadata 조회에 사용할 token"
         required: true
-      gemini_api_key:
-        description: "Gemini prediction 호출에 사용할 API key"
+      openai_api_key:
+        description: "OpenAI prediction 호출에 사용할 API key"
         required: true
       discord_webhook_url:
         description: "선택 사항. report를 전송할 Discord webhook URL"
@@ -147,7 +147,7 @@ jobs:
         working-directory: watcher
         env:
           GITHUB_TOKEN: ${{ secrets.watcher_github_token || secrets.WATCHER_GITHUB_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.gemini_api_key || secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.openai_api_key || secrets.OPENAI_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.discord_webhook_url || secrets.DISCORD_WEBHOOK_URL }}
           WATCHER_REPOSITORY: ${{ inputs.repository }}
           WATCHER_GITHUB_API_URL: ${{ github.api_url }}

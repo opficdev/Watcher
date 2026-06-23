@@ -30,5 +30,5 @@ jobs:
         .github/workflows/**
     secrets:
       watcher_github_token: ${{ secrets.WATCHER_GITHUB_TOKEN }}
-      gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+      openai_api_key: ${{ secrets.OPENAI_API_KEY }}
       discord_webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
