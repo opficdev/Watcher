@@ -137,12 +137,30 @@ async function openAiErrorDetailFor(response: Response): Promise<string | undefi
   try {
     const text = await response.text()
     const trimmed = text.trim()
+    const detail = openAiErrorMessageFor(trimmed) ?? trimmed
 
-    if (MAX_OPENAI_ERROR_DETAIL_LENGTH < trimmed.length) {
-      return trimmed.slice(0, MAX_OPENAI_ERROR_DETAIL_LENGTH) + "... (1000자 제한)"
+    if (MAX_OPENAI_ERROR_DETAIL_LENGTH < detail.length) {
+      return detail.slice(0, MAX_OPENAI_ERROR_DETAIL_LENGTH) + "... (1000자 제한)"
     }
 
-    return trimmed || undefined
+    return detail || undefined
+  } catch {
+    return undefined
+  }
+}
+
+// OpenAI JSON error body에서는 report에 필요한 message만 추출
+function openAiErrorMessageFor(text: string): string | undefined {
+  try {
+    const value = JSON.parse(text) as {
+      error?: {
+        message?: unknown
+      }
+    }
+
+    return typeof value.error?.message === "string"
+      ? value.error.message
+      : undefined
   } catch {
     return undefined
   }

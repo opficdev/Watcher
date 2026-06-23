@@ -135,10 +135,9 @@ test("throws when OpenAI request fails", async () => {
     })
   })
 
-  await assert.rejects(
-    client.predict(prompt()),
-    /OpenAI prediction request failed with status 429: .*rate limit exceeded/
-  )
+  await assert.rejects(client.predict(prompt()), {
+    message: "OpenAI prediction request failed with status 429: rate limit exceeded"
+  })
 })
 
 // OpenAI HTTP 실패 응답이 너무 길면 workflow log를 보호하기 위해 일부만 노출하는지 확인
