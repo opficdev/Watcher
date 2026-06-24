@@ -191,6 +191,10 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
         : undefined
     }
   )
+  await debugArtifactWriter?.writeJson("ai-result.json", {
+    predictions
+  })
+
   const report = buildMergeRiskReport(risks.map((risk, index) => ({
     risk,
     branch: inputs[index]!.branch,

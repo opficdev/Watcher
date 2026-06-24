@@ -146,6 +146,7 @@ artifact에는 다음 파일이 포함됩니다.
 | `ai-prompt.json` | OpenAI에 전달한 system prompt, user prompt, response shape |
 | `ai-response.json` | provider가 반환한 raw response |
 | `ai-error.json` | provider 호출 또는 response validation 실패 요약. 실패가 없으면 생성되지 않을 수 있음 |
+| `ai-result.json` | response validation 이후 branch별 AI prediction, skipped, failed 매핑 결과 |
 | `report.md` | 최종 Markdown report |
 
 debug artifact에는 `GITHUB_TOKEN`, `WATCHER_GITHUB_TOKEN`, `OPENAI_API_KEY`, `DISCORD_WEBHOOK_URL`을 기록하지 않습니다. raw file content와 raw diff 전문도 포함하지 않습니다.
