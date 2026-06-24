@@ -14,6 +14,8 @@ test("builds merge risk watch options from environment", () => {
     WATCHER_DEFAULT_BRANCH: "main",
     WATCHER_CRITICAL_FILE_PATTERNS: "package-lock.json\n.github/**",
     WATCHER_GITHUB_API_URL: "https://api.github.test",
+    WATCHER_DEBUG_ARTIFACT_DIR: "/tmp/watcher-debug",
+    WATCHER_WORKFLOW_REF: "opficdev/Watcher/.github/workflows/merge-risk-watch.yml@develop",
     GITHUB_TOKEN: "github-token"
   })
 
@@ -28,7 +30,9 @@ test("builds merge risk watch options from environment", () => {
     ],
     remoteName: "origin",
     githubApiUrl: "https://api.github.test",
-    githubToken: "github-token"
+    githubToken: "github-token",
+    debugArtifactDir: "/tmp/watcher-debug",
+    workflowRef: "opficdev/Watcher/.github/workflows/merge-risk-watch.yml@develop"
   })
 })
 
