@@ -4,8 +4,11 @@ import {
   BranchRiskStatus,
   predictMergeRisksWithAi,
   type AiPredictionClient,
+  type AiPredictionFailureDebugEvent,
   type AiPredictionEvidencePayload,
   type AiPredictionPrompt,
+  type AiPredictionPromptDebugEvent,
+  type AiPredictionResponseDebugEvent,
   type BranchContext,
   type BranchRisk,
   type BranchRiskReasonCode,
@@ -149,6 +152,59 @@ test("passes custom system prompt to client", async () => {
   })
 
   assert.equal(client.prompts[0]?.systemPrompt, "Return compact JSON.")
+})
+
+// AI prompt와 provider response를 debug observer로 전달하는지 확인
+test("notifies debug observer with prompt and response", async () => {
+  const prompts: AiPredictionPromptDebugEvent[] = []
+  const responses: AiPredictionResponseDebugEvent[] = []
+  const client = new AiPredictionClientSpy()
+
+  await predictMergeRisksWithAi([
+    payload("feature/critical", 100, BranchRiskStatus.Critical)
+  ], client, {
+    debugObserver: {
+      onPromptBuilt: event => {
+        prompts.push(event)
+      },
+      onResponseReceived: event => {
+        responses.push(event)
+      }
+    }
+  })
+
+  assert.deepEqual(prompts[0]?.targetBranches, [{
+    branchName: "feature/critical",
+    baseBranch: "main"
+  }])
+  assert.equal(prompts[0]?.prompt.responseShape, "predictionBatch")
+  assert.deepEqual(responses[0]?.targetBranches, [{
+    branchName: "feature/critical",
+    baseBranch: "main"
+  }])
+  assert.deepEqual(responses[0]?.response, validBatchResponse(["feature/critical"]))
+})
+
+// AI provider나 response 검증 실패를 debug observer로 전달하는지 확인
+test("notifies debug observer when prediction fails", async () => {
+  const failures: AiPredictionFailureDebugEvent[] = []
+  const client = new AiPredictionClientSpy(new Error("provider failed"))
+
+  await predictMergeRisksWithAi([
+    payload("feature/critical", 100, BranchRiskStatus.Critical)
+  ], client, {
+    debugObserver: {
+      onPredictionFailed: event => {
+        failures.push(event)
+      }
+    }
+  })
+
+  assert.deepEqual(failures[0]?.targetBranches, [{
+    branchName: "feature/critical",
+    baseBranch: "main"
+  }])
+  assert.match(failures[0]?.errorMessage ?? "", /provider failed/)
 })
 
 class AiPredictionClientSpy implements AiPredictionClient {

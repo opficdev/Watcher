@@ -32,8 +32,36 @@ export type AiPredictionClient = {
   predict(prompt: AiPredictionPrompt): Promise<unknown>
 }
 
-// AI prediction runner가 prompt 생성을 조정하기 위한 설정
-export type AiPredictionRunOptions = AiPredictionPromptBuildOptions
+export type AiPredictionDebugTarget = {
+  branchName: string
+  baseBranch: string
+}
+
+export type AiPredictionPromptDebugEvent = {
+  targetBranches: AiPredictionDebugTarget[]
+  prompt: AiPredictionPrompt
+}
+
+export type AiPredictionResponseDebugEvent = {
+  targetBranches: AiPredictionDebugTarget[]
+  response: unknown
+}
+
+export type AiPredictionFailureDebugEvent = {
+  targetBranches: AiPredictionDebugTarget[]
+  errorMessage: string
+}
+
+export type AiPredictionDebugObserver = {
+  onPromptBuilt?(event: AiPredictionPromptDebugEvent): void | Promise<void>
+  onResponseReceived?(event: AiPredictionResponseDebugEvent): void | Promise<void>
+  onPredictionFailed?(event: AiPredictionFailureDebugEvent): void | Promise<void>
+}
+
+// AI prediction runner가 prompt 생성과 debug 기록을 조정하기 위한 설정
+export type AiPredictionRunOptions = AiPredictionPromptBuildOptions & {
+  debugObserver?: AiPredictionDebugObserver
+}
 
 // branch별 AI prediction 실행 결과
 export type AiPredictionResult =
