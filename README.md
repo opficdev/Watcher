@@ -44,10 +44,7 @@ consumer workflow에는 다음 `permissions`가 필요합니다. 이 값은 GitH
 
 | permission | 용도 |
 | --- | --- |
-| `contents: read` | repository checkout과 branch fetch |
-| `actions: read` | workflow 실행 context 조회 |
-| `checks: read` | branch check metadata 조회 |
-| `pull-requests: read` | commit에 연결된 PR metadata 조회 |
+| `contents: read` | Watcher source checkout 또는 release asset 다운로드 |
 
 ## Inputs
 
@@ -253,8 +250,8 @@ scheduled run은 consumer repository의 실제 remote branch를 fetch하고, `ba
 | --- | --- |
 | workflow가 시작되지 않음 | consumer workflow가 `schedule`, `workflow_dispatch` 중 필요한 trigger를 가지고 있는지 확인 |
 | checkout 또는 fetch 실패 | `WATCHER_GITHUB_TOKEN`의 Repository access, `Contents: Read-only`, workflow `contents: read` 확인 |
-| PR metadata가 비어 있음 | `WATCHER_GITHUB_TOKEN`의 `Pull requests: Read-only`, workflow `pull-requests: read`, commit에 연결된 PR 존재 여부 확인 |
-| check metadata가 비어 있음 | `WATCHER_GITHUB_TOKEN`의 `Checks: Read-only`, workflow `checks: read`, 해당 branch head SHA의 check run 존재 여부 확인 |
+| PR metadata가 비어 있음 | `WATCHER_GITHUB_TOKEN`의 `Pull requests: Read-only`, commit에 연결된 PR 존재 여부 확인 |
+| check metadata가 비어 있음 | `WATCHER_GITHUB_TOKEN`의 `Checks: Read-only`, 해당 branch head SHA의 check run 존재 여부 확인 |
 | AI prediction이 `skipped`로 표시됨 | deterministic possibility status가 `critical`인지와 `confirmed_conflict`가 아닌지 확인 |
 | AI prediction이 `failed`로 표시됨 | `OPENAI_API_KEY` secret, OpenAI API 응답 형식, rate limit 상태 확인 |
 | Discord 전송이 되지 않음 | `DISCORD_WEBHOOK_URL` secret, Discord incoming webhook URL, webhook channel 권한 확인 |
