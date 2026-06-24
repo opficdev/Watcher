@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { select } from "../../src/branches/branchSelector.js"
+import { select, selectWithReasons } from "../../src/branches/branchSelector.js"
 import type { RepositoryBranch } from "../../src/branches/types.js"
 
 // base, default branch가 감시 대상에서 제외되는지 확인
@@ -15,6 +15,29 @@ test("excludes base and default branches", () => {
   })
 
   assert.deepEqual(selected.map(branch => branch.name), ["feature/watch"])
+})
+
+// base/default branch 제외 사유를 debug artifact에 남길 수 있는지 확인
+test("records branch exclusion reasons", () => {
+  const result = selectWithReasons([
+    branch("main"),
+    branch("develop"),
+    branch("feature/watch")
+  ], {
+    baseBranch: "develop",
+    defaultBranch: "main"
+  })
+
+  assert.deepEqual(result.selected.map(branch => branch.name), ["feature/watch"])
+  assert.deepEqual(result.excluded, [{
+    name: "main",
+    sha: "main-sha",
+    reason: "default_branch"
+  }, {
+    name: "develop",
+    sha: "develop-sha",
+    reason: "base_branch"
+  }])
 })
 
 // base/default branch를 제외한 모든 branch가 감시 대상으로 유지되는지 확인

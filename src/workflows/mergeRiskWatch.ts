@@ -2,15 +2,20 @@ import { execFile } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { resolve } from "node:path"
 import { promisify } from "node:util"
-import { collectBranchContexts } from "../branches/branchCollector.js"
+import { selectWithReasons as selectBranchesWithReasons } from "../branches/branchSelector.js"
 import { collectGitMergeSignal } from "../git/gitMergeSignalCollector.js"
 import { analyze as analyzeBranchMergeRisks } from "../risks/riskAnalyzer.js"
 import { build as buildAiPredictionEvidencePayload } from "../ai/evidenceBuilder.js"
 import { createDefaultAiPredictionClient } from "../ai/openAiPredictionClient.js"
 import { predict as predictMergeRisksWithAi } from "../ai/predictionRunner.js"
+import { select as selectAiPredictionTargets } from "../ai/predictionTargetSelector.js"
 import { build as buildMergeRiskReport } from "../reports/reportBuilder.js"
 import { format as formatMergeRiskReportMarkdown } from "../reports/markdownFormatter.js"
 import { send as sendMergeRiskReport } from "../reportChannels/reportChannel.js"
+import { writerFor as debugArtifactWriterFor } from "../debug/debugArtifact.js"
+import type {
+  AiPredictionEvidencePayload
+} from "../ai/types.js"
 import type {
   BranchCheckMetadata,
   BranchPullRequestMetadata,
@@ -32,6 +37,8 @@ type MergeRiskWatchOptions = {
   remoteName: string
   githubApiUrl: string
   githubToken?: string
+  debugArtifactDir?: string
+  workflowRef?: string
   fetch?: typeof fetch
 }
 
@@ -73,6 +80,9 @@ export function optionsFromEnvironment(
   const baseBranch = requiredEnv(env, "WATCHER_BASE_BRANCH")
   const defaultBranch = optionalEnv(env, "WATCHER_DEFAULT_BRANCH")
 
+  const debugArtifactDir = optionalEnv(env, "WATCHER_DEBUG_ARTIFACT_DIR")
+  const workflowRef = optionalEnv(env, "WATCHER_WORKFLOW_REF")
+
   return {
     repository,
     repositoryPath,
@@ -81,7 +91,9 @@ export function optionsFromEnvironment(
     criticalFilePatterns: patternsFrom(optionalEnv(env, "WATCHER_CRITICAL_FILE_PATTERNS")),
     remoteName: optionalEnv(env, "WATCHER_REMOTE_NAME") ?? "origin",
     githubApiUrl: optionalEnv(env, "WATCHER_GITHUB_API_URL") ?? "https://api.github.com",
-    githubToken: optionalEnv(env, "GITHUB_TOKEN")
+    githubToken: optionalEnv(env, "GITHUB_TOKEN"),
+    ...(debugArtifactDir ? { debugArtifactDir } : {}),
+    ...(workflowRef ? { workflowRef } : {})
   }
 }
 
@@ -92,11 +104,34 @@ export async function runFromEnvironment(): Promise<void> {
 
 // local git checkout에서 branch signal을 수집하고 report channel로 전송
 export async function run(options: MergeRiskWatchOptions): Promise<void> {
-  const branches = await collectBranchContexts(branchSourceFor(options), {
+  const generatedAt = new Date()
+  const debugArtifactWriter = debugArtifactWriterFor(options.debugArtifactDir)
+
+  await debugArtifactWriter?.writeJson("run.json", {
+    repository: options.repository,
+    repositoryPath: options.repositoryPath,
+    baseBranch: options.baseBranch,
+    defaultBranch: options.defaultBranch,
+    criticalFilePatterns: options.criticalFilePatterns,
+    remoteName: options.remoteName,
+    githubApiUrl: options.githubApiUrl,
+    workflowRef: options.workflowRef,
+    generatedAt
+  })
+
+  const repositoryBranches = await branchSourceFor(options).listBranches()
+  const branchSelection = selectBranchesWithReasons(repositoryBranches, {
     baseBranch: options.baseBranch,
     defaultBranch: options.defaultBranch
   })
+  const branches = branchSelection.selected
   const inputs: BranchRiskAnalysisInput[] = []
+
+  await debugArtifactWriter?.writeJson("branch-selection.json", {
+    repositoryBranches,
+    selectedBranches: branchSelection.selected,
+    excludedBranches: branchSelection.excluded
+  })
 
   for (const branch of branches) {
     const gitSignal = await collectGitMergeSignal(branch, {
@@ -125,24 +160,75 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
   const evidencePayloads = inputs.map((input, index) =>
     buildAiPredictionEvidencePayload(input, risks[index]!)
   )
+  const aiTargets = selectAiPredictionTargets(evidencePayloads)
+  const aiTargetSet = new Set(aiTargets)
+
+  await debugArtifactWriter?.writeJson("deterministic-evidence.json", {
+    inputs,
+    risks,
+    evidencePayloads
+  })
+  await debugArtifactWriter?.writeJson("ai-target-selection.json", {
+    targetBranches: aiTargets.map(aiDebugTargetFor),
+    skippedBranches: evidencePayloads
+      .filter(payload => !aiTargetSet.has(payload))
+      .map(payload => ({
+        ...aiDebugTargetFor(payload),
+        reason: aiSkippedReasonFor(payload)
+      }))
+  })
+
   const predictions = await predictMergeRisksWithAi(
     evidencePayloads,
-    createDefaultAiPredictionClient()
+    createDefaultAiPredictionClient(),
+    {
+      debugObserver: debugArtifactWriter
+        ? {
+          onPromptBuilt: event => debugArtifactWriter.writeJson("ai-prompt.json", event),
+          onResponseReceived: event => debugArtifactWriter.writeJson("ai-response.json", event),
+          onPredictionFailed: event => debugArtifactWriter.writeJson("ai-error.json", event)
+        }
+        : undefined
+    }
   )
+  await debugArtifactWriter?.writeJson("ai-result.json", {
+    predictions
+  })
+
   const report = buildMergeRiskReport(risks.map((risk, index) => ({
     risk,
     branch: inputs[index]!.branch,
     aiPrediction: predictions[index]
   })), options.baseBranch, {
-    generatedAt: new Date()
+    generatedAt
   })
+  const markdown = formatMergeRiskReportMarkdown(report)
+
+  await debugArtifactWriter?.writeText("report.md", markdown)
+
   const result = await sendMergeRiskReport({
-    markdown: formatMergeRiskReportMarkdown(report)
+    markdown
   })
 
   if (!result.ok) {
     throw new Error(result.errorMessage)
   }
+}
+
+function aiDebugTargetFor(payload: AiPredictionEvidencePayload): {
+  branchName: string
+  baseBranch: string
+} {
+  return {
+    branchName: payload.branch.name,
+    baseBranch: payload.branch.baseBranch
+  }
+}
+
+function aiSkippedReasonFor(payload: AiPredictionEvidencePayload): "not_target" | "confirmed_conflict" {
+  return payload.possibility.reasons.some(reason => reason.code === "confirmed_conflict")
+    ? "confirmed_conflict"
+    : "not_target"
 }
 
 // remote tracking branch 목록을 BranchSource로 제공

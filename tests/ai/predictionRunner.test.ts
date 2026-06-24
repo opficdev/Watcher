@@ -4,8 +4,11 @@ import {
   BranchRiskStatus,
   predictMergeRisksWithAi,
   type AiPredictionClient,
+  type AiPredictionFailureDebugEvent,
   type AiPredictionEvidencePayload,
   type AiPredictionPrompt,
+  type AiPredictionPromptDebugEvent,
+  type AiPredictionResponseDebugEvent,
   type BranchContext,
   type BranchRisk,
   type BranchRiskReasonCode,
@@ -151,6 +154,109 @@ test("passes custom system prompt to client", async () => {
   assert.equal(client.prompts[0]?.systemPrompt, "Return compact JSON.")
 })
 
+// AI prompt와 provider response를 debug observer로 전달하는지 확인
+test("notifies debug observer with prompt and response", async () => {
+  const prompts: AiPredictionPromptDebugEvent[] = []
+  const responses: AiPredictionResponseDebugEvent[] = []
+  const client = new AiPredictionClientSpy()
+
+  await predictMergeRisksWithAi([
+    payload("feature/critical", 100, BranchRiskStatus.Critical)
+  ], client, {
+    debugObserver: {
+      onPromptBuilt: event => {
+        prompts.push(event)
+      },
+      onResponseReceived: event => {
+        responses.push(event)
+      }
+    }
+  })
+
+  assert.deepEqual(prompts[0]?.targetBranches, [{
+    branchName: "feature/critical",
+    baseBranch: "main"
+  }])
+  assert.equal(prompts[0]?.prompt.responseShape, "predictionBatch")
+  assert.deepEqual(responses[0]?.targetBranches, [{
+    branchName: "feature/critical",
+    baseBranch: "main"
+  }])
+  assert.deepEqual(responses[0]?.response, validBatchResponse(["feature/critical"]))
+})
+
+// AI provider나 response 검증 실패를 debug observer로 전달하는지 확인
+test("notifies debug observer when prediction fails", async () => {
+  const failures: AiPredictionFailureDebugEvent[] = []
+  const client = new AiPredictionClientSpy(new Error("provider failed"))
+
+  await predictMergeRisksWithAi([
+    payload("feature/critical", 100, BranchRiskStatus.Critical)
+  ], client, {
+    debugObserver: {
+      onPredictionFailed: event => {
+        failures.push(event)
+      }
+    }
+  })
+
+  assert.deepEqual(failures[0]?.targetBranches, [{
+    branchName: "feature/critical",
+    baseBranch: "main"
+  }])
+  assert.match(failures[0]?.errorMessage ?? "", /provider failed/)
+})
+
+// prompt debug observer가 실패해도 AI prediction은 계속 진행되는지 확인
+test("continues prediction when prompt debug observer throws", async () => {
+  const client = new AiPredictionClientSpy()
+  const results = await suppressConsoleWarn(() => predictMergeRisksWithAi([
+    payload("feature/critical", 100, BranchRiskStatus.Critical)
+  ], client, {
+    debugObserver: {
+      onPromptBuilt: () => {
+        throw new Error("prompt artifact failed")
+      }
+    }
+  }))
+
+  assert.equal(client.prompts.length, 1)
+  assert.equal(results[0]?.status, "predicted")
+})
+
+// response debug observer가 실패해도 provider response 검증과 결과 매핑은 계속되는지 확인
+test("continues prediction when response debug observer throws", async () => {
+  const client = new AiPredictionClientSpy()
+  const results = await suppressConsoleWarn(() => predictMergeRisksWithAi([
+    payload("feature/critical", 100, BranchRiskStatus.Critical)
+  ], client, {
+    debugObserver: {
+      onResponseReceived: () => {
+        throw new Error("response artifact failed")
+      }
+    }
+  }))
+
+  assert.equal(results[0]?.status, "predicted")
+})
+
+// failure debug observer가 실패해도 branch별 failed result는 반환되는지 확인
+test("returns failed prediction when failure debug observer throws", async () => {
+  const client = new AiPredictionClientSpy(new Error("provider failed"))
+  const results = await suppressConsoleWarn(() => predictMergeRisksWithAi([
+    payload("feature/critical", 100, BranchRiskStatus.Critical)
+  ], client, {
+    debugObserver: {
+      onPredictionFailed: () => {
+        throw new Error("failure artifact failed")
+      }
+    }
+  }))
+
+  assert.equal(results[0]?.status, "failed")
+  assert.match(results[0]?.status === "failed" ? results[0].errorMessage : "", /provider failed/)
+})
+
 class AiPredictionClientSpy implements AiPredictionClient {
   prompts: AiPredictionPrompt[] = []
 
@@ -177,6 +283,18 @@ function branchNamesFrom(prompt: AiPredictionPrompt): string[] {
   }
 
   return evidence.branches.map(branch => branch.branch.name)
+}
+
+async function suppressConsoleWarn<T>(operation: () => Promise<T>): Promise<T> {
+  const originalWarn = console.warn
+
+  console.warn = () => {}
+
+  try {
+    return await operation()
+  } finally {
+    console.warn = originalWarn
+  }
 }
 
 function payload(

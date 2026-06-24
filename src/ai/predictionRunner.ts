@@ -3,6 +3,8 @@ import { select as selectTargets } from "./predictionTargetSelector.js"
 import { validateBatch as validateBatchResponse } from "./predictionResponseValidator.js"
 import type {
   AiPrediction,
+  AiPredictionDebugObserver,
+  AiPredictionDebugTarget,
   AiPredictionClient,
   AiPredictionEvidencePayload,
   AiPredictionResult,
@@ -36,17 +38,62 @@ async function predictedResultsFor(
   client: AiPredictionClient,
   options: AiPredictionRunOptions
 ): Promise<Map<AiPredictionEvidencePayload, AiPredictionResult>> {
+  const targetBranches = targets.map(debugTargetFor)
+  const prompt = buildBatchPrompt(targets, options)
+  await notifyDebugObserver("onPromptBuilt", () => options.debugObserver?.onPromptBuilt?.({
+    targetBranches,
+    prompt
+  }))
+
+  let response: unknown
+
   try {
-    const prompt = buildBatchPrompt(targets, options)
-    const response = await client.predict(prompt)
+    response = await client.predict(prompt)
+  } catch (error) {
+    const errorMessage = errorMessageFor(error)
+    await notifyDebugObserver("onPredictionFailed", () => options.debugObserver?.onPredictionFailed?.({
+      targetBranches,
+      errorMessage
+    }))
+
+    return new Map(targets.map(target => [
+      target,
+      failedResultFor(target, errorMessage)
+    ]))
+  }
+
+  await notifyDebugObserver("onResponseReceived", () => options.debugObserver?.onResponseReceived?.({
+    targetBranches,
+    response
+  }))
+
+  try {
     const predictions = validateBatchResponse(response)
 
     return resultsByPayloadFor(targets, predictions)
   } catch (error) {
+    const errorMessage = errorMessageFor(error)
+    await notifyDebugObserver("onPredictionFailed", () => options.debugObserver?.onPredictionFailed?.({
+      targetBranches,
+      errorMessage
+    }))
+
     return new Map(targets.map(target => [
       target,
-      failedResultFor(target, errorMessageFor(error))
+      failedResultFor(target, errorMessage)
     ]))
+  }
+}
+
+// debug observer 실패가 prediction 흐름을 중단하지 않도록 격리
+async function notifyDebugObserver(
+  eventName: keyof AiPredictionDebugObserver,
+  action: () => Promise<void> | void | undefined
+): Promise<void> {
+  try {
+    await action()
+  } catch (error) {
+    console.warn(`Failed to notify debug observer (${eventName}): ${errorMessageFor(error)}`)
   }
 }
 
@@ -121,4 +168,11 @@ function predictionKeyFor(
   baseBranch: string
 ): string {
   return `${baseBranch}\u0000${branchName}`
+}
+
+function debugTargetFor(payload: AiPredictionEvidencePayload): AiPredictionDebugTarget {
+  return {
+    branchName: payload.branch.name,
+    baseBranch: payload.branch.baseBranch
+  }
 }
