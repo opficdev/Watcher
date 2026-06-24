@@ -25,6 +25,21 @@ export type BranchSelectionOptions = {
   defaultBranch?: string
 }
 
+export type BranchExclusionReason =
+  | "base_branch"
+  | "default_branch"
+
+export type ExcludedBranch = {
+  name: string
+  sha: string
+  reason: BranchExclusionReason
+}
+
+export type BranchSelectionResult = {
+  selected: BranchContext[]
+  excluded: ExcludedBranch[]
+}
+
 export type BranchContext = {
   baseBranch: string
   name: string
