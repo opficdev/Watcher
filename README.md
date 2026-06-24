@@ -32,11 +32,10 @@ fine-grained PAT는 GitHub `Settings` > `Developer settings` > `Personal access 
 | --- | --- |
 | Repository access | 감시 대상 repository만 선택 |
 | Contents | Read-only |
-| Checks | Read-only |
 | Pull requests | Read-only |
 | Metadata | Read-only. GitHub가 자동 포함 |
 
-`Contents: Read-only`는 checkout과 branch fetch에 필요합니다. `Checks: Read-only`는 branch head SHA의 check run 조회에 필요합니다. `Pull requests: Read-only`는 commit에 연결된 PR metadata 조회에 필요합니다.
+`Contents: Read-only`는 checkout과 branch fetch에 필요합니다. `Pull requests: Read-only`는 commit에 연결된 PR metadata 조회에 필요합니다.
 
 ### Consumer workflow permissions
 
@@ -251,7 +250,7 @@ scheduled run은 consumer repository의 실제 remote branch를 fetch하고, `ba
 | workflow가 시작되지 않음 | consumer workflow가 `schedule`, `workflow_dispatch` 중 필요한 trigger를 가지고 있는지 확인 |
 | checkout 또는 fetch 실패 | `WATCHER_GITHUB_TOKEN`의 Repository access, `Contents: Read-only`, workflow `contents: read` 확인 |
 | PR metadata가 비어 있음 | `WATCHER_GITHUB_TOKEN`의 `Pull requests: Read-only`, commit에 연결된 PR 존재 여부 확인 |
-| check metadata가 비어 있음 | `WATCHER_GITHUB_TOKEN`의 `Checks: Read-only`, 해당 branch head SHA의 check run 존재 여부 확인 |
+| check metadata가 비어 있음 | 해당 branch head SHA의 check run 존재 여부 확인 |
 | AI prediction이 `skipped`로 표시됨 | deterministic possibility status가 `critical`인지와 `confirmed_conflict`가 아닌지 확인 |
 | AI prediction이 `failed`로 표시됨 | `OPENAI_API_KEY` secret, OpenAI API 응답 형식, rate limit 상태 확인 |
 | Discord 전송이 되지 않음 | `DISCORD_WEBHOOK_URL` secret, Discord incoming webhook URL, webhook channel 권한 확인 |

@@ -216,6 +216,23 @@ test("collects check metadata from GitHub check runs API", async () => {
   }])
 })
 
+// check run metadata 조회 실패가 branch 수집 실패로 전파되지 않는지 확인
+test("returns empty check metadata when GitHub check runs request fails", async () => {
+  const client = githubMetadataClientFor({
+    ...baseOptions(),
+    fetch: async () => new Response("{}", {
+      status: 403,
+      headers: {
+        "Content-Type": "application/json"
+      }
+    })
+  })
+
+  const checks = await suppressConsoleWarn(() => client.checksFor("abc123"))
+
+  assert.deepEqual(checks, [])
+})
+
 // commit에 연결된 PR 목록에서 branch와 맞는 Pull Request metadata를 선택하는지 확인
 test("collects pull request metadata for matching branch", async () => {
   const client = githubMetadataClientFor({
@@ -345,6 +362,18 @@ function restoreEnv(name: string, value: string | undefined): void {
   }
 
   process.env[name] = value
+}
+
+async function suppressConsoleWarn<T>(operation: () => Promise<T>): Promise<T> {
+  const originalWarn = console.warn
+
+  console.warn = () => {}
+
+  try {
+    return await operation()
+  } finally {
+    console.warn = originalWarn
+  }
 }
 
 async function git(cwd: string, args: string[]): Promise<string> {

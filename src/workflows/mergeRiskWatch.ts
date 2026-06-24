@@ -279,23 +279,28 @@ export function githubMetadataClientFor(options: MergeRiskWatchOptions): {
 
   return {
     checksFor: async ref => {
-      const response = await githubJson<GitHubCheckRunsResponse>(options, [
-        "repos",
-        owner,
-        repo,
-        "commits",
-        ref,
-        "check-runs"
-      ], {
-        per_page: "100"
-      })
+      try {
+        const response = await githubJson<GitHubCheckRunsResponse>(options, [
+          "repos",
+          owner,
+          repo,
+          "commits",
+          ref,
+          "check-runs"
+        ], {
+          per_page: "100"
+        })
 
-      return (response.check_runs ?? [])
-        .map(check => ({
-          name: check.name ?? "unknown",
-          status: check.status ?? "unknown",
-          conclusion: check.conclusion ?? undefined
-        }))
+        return (response.check_runs ?? [])
+          .map(check => ({
+            name: check.name ?? "unknown",
+            status: check.status ?? "unknown",
+            conclusion: check.conclusion ?? undefined
+          }))
+      } catch (error) {
+        console.warn(`GitHub check metadata request failed: ${warningMessageFor(error)}`)
+        return []
+      }
     },
     pullRequestFor: async (sha, branchName) => {
       const pulls = await githubJson<GitHubPullRequestResponse[]>(options, [
@@ -320,6 +325,10 @@ export function githubMetadataClientFor(options: MergeRiskWatchOptions): {
       }
     }
   }
+}
+
+function warningMessageFor(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 // git diff hunk header를 BranchChangedHunk 목록으로 변환
