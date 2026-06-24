@@ -26,9 +26,13 @@ on:
         required: false
         type: string
         default: ""
+      github_app_client_id:
+        description: "watched repository 접근에 사용할 GitHub App client ID"
+        required: true
+        type: string
     secrets:
-      watcher_github_token:
-        description: "감시 대상 repository checkout, fetch, metadata 조회에 사용할 token"
+      watcher_github_app_private_key:
+        description: "watched repository 접근에 사용할 GitHub App private key"
         required: true
       openai_api_key:
         description: "OpenAI prediction 호출에 사용할 API key"
@@ -61,6 +65,10 @@ on:
         required: false
         type: string
         default: ""
+      github_app_client_id:
+        description: "watched repository 접근에 사용할 GitHub App client ID"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -73,11 +81,47 @@ jobs:
     name: Watch Merge Risk
     runs-on: macos-latest
     steps:
+      - name: Resolve watched repository
+        id: watched_repository
+        env:
+          WATCHER_REPOSITORY: ${{ inputs.repository }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$WATCHER_REPOSITORY" != */* ]]; then
+            echo "repository must use owner/repo format" >&2
+            exit 1
+          fi
+
+          owner="${WATCHER_REPOSITORY%%/*}"
+          repo="${WATCHER_REPOSITORY#*/}"
+
+          if [[ -z "$owner" || -z "$repo" || "$repo" == */* ]]; then
+            echo "repository must use owner/repo format" >&2
+            exit 1
+          fi
+
+          echo "owner=$owner" >> "$GITHUB_OUTPUT"
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+
+      - name: Create watched repository GitHub App token
+        id: github_app_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ inputs.github_app_client_id }}
+          private-key: ${{ secrets.watcher_github_app_private_key || secrets.WATCHER_GITHUB_APP_PRIVATE_KEY }}
+          owner: ${{ steps.watched_repository.outputs.owner }}
+          repositories: ${{ steps.watched_repository.outputs.repo }}
+          permission-actions: read
+          permission-checks: read
+          permission-contents: read
+          permission-pull-requests: read
+
       - name: Checkout watched repository
         uses: actions/checkout@v6
         with:
           repository: ${{ inputs.repository }}
-          token: ${{ secrets.watcher_github_token || secrets.WATCHER_GITHUB_TOKEN }}
+          token: ${{ steps.github_app_token.outputs.token }}
           path: watched-repository
           ref: ${{ inputs.base_branch }}
           fetch-depth: 0
@@ -146,7 +190,7 @@ jobs:
       - name: Run Watcher
         working-directory: watcher
         env:
-          GITHUB_TOKEN: ${{ secrets.watcher_github_token || secrets.WATCHER_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.github_app_token.outputs.token }}
           OPENAI_API_KEY: ${{ secrets.openai_api_key || secrets.OPENAI_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.discord_webhook_url || secrets.DISCORD_WEBHOOK_URL }}
           WATCHER_REPOSITORY: ${{ inputs.repository }}

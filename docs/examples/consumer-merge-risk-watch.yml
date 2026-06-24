@@ -25,10 +25,11 @@ jobs:
       base_branch: develop
       default_branch: main
       watcher_version: ${{ inputs.watcher_version }}
+      github_app_client_id: ${{ vars.WATCHER_GITHUB_APP_CLIENT_ID }}
       critical_file_patterns: |
         package-lock.json
         .github/workflows/**
     secrets:
-      watcher_github_token: ${{ secrets.WATCHER_GITHUB_TOKEN }}
+      watcher_github_app_private_key: ${{ secrets.WATCHER_GITHUB_APP_PRIVATE_KEY }}
       openai_api_key: ${{ secrets.OPENAI_API_KEY }}
       discord_webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}

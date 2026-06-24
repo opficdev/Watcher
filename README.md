@@ -10,23 +10,35 @@ consumer repository에 workflow 파일 하나를 추가합니다. 전체 예시�
 
 운영 환경에서는 `uses: opficdev/Watcher/.github/workflows/merge-risk-watch.yml@0.1.0`처럼 release tag를 ref로 고정합니다. Watcher는 이 ref를 기준으로 같은 tag의 release asset을 자동으로 다운로드합니다.
 
-예시에서 consumer repository에 맞게 `base_branch`, `default_branch`, `critical_file_patterns`, secret 이름을 조정합니다.
+예시에서 consumer repository에 맞게 `base_branch`, `default_branch`, `critical_file_patterns`, variable과 secret 이름을 조정합니다.
 
-## Secrets
+## GitHub App 설정
 
-consumer repository에는 다음 secret을 설정합니다.
+Watcher는 watched repository 접근에 GitHub App installation token을 사용합니다. consumer repository를 감시할 GitHub App을 만들고 watched repository에 설치합니다.
 
-| secret | 필수 여부 | 용도 |
+GitHub App에는 다음 repository permission을 부여합니다.
+
+| permission | access | 용도 |
 | --- | --- | --- |
-| `WATCHER_GITHUB_TOKEN` | 필수 | watched repository checkout, branch fetch, PR/check metadata 조회 |
-| `OPENAI_API_KEY` | 필수 | OpenAI prediction 생성 |
-| `DISCORD_WEBHOOK_URL` | 선택 | Discord webhook report 전송. 미설정 시 stdout으로 출력 |
+| `Contents` | `Read-only` | repository checkout과 branch fetch |
+| `Actions` | `Read-only` | workflow 실행 context 조회 |
+| `Checks` | `Read-only` | branch check metadata 조회 |
+| `Pull requests` | `Read-only` | commit에 연결된 PR metadata 조회 |
 
-`WATCHER_GITHUB_TOKEN`은 watched repository를 checkout하고 branch, check, pull request metadata를 읽을 수 있어야 합니다. public repository라도 metadata 조회와 private repository 확장을 고려해 explicit token을 사용합니다.
+GitHub App private key를 생성한 뒤 consumer repository에는 다음 variable과 secret을 설정합니다.
+
+| 이름 | 종류 | 필수 여부 | 용도 |
+| --- | --- | --- | --- |
+| `WATCHER_GITHUB_APP_CLIENT_ID` | variable | 필수 | GitHub App installation token 발급 |
+| `WATCHER_GITHUB_APP_PRIVATE_KEY` | secret | 필수 | GitHub App installation token 발급 |
+| `OPENAI_API_KEY` | secret | 필수 | OpenAI prediction 생성 |
+| `DISCORD_WEBHOOK_URL` | secret | 선택 | Discord webhook report 전송. 미설정 시 stdout으로 출력 |
+
+GitHub App은 watched repository에 설치되어 있어야 합니다. token은 workflow 실행 중 생성되며 App에 부여한 repository permission과 설치 범위 안에서만 동작합니다.
 
 ## Permissions
 
-consumer workflow에는 다음 permission이 필요합니다.
+consumer workflow에는 다음 permission이 필요합니다. watched repository 접근 권한은 GitHub App installation token이 담당하지만, workflow 자체의 release asset 다운로드와 GitHub Actions context 조회를 위해 유지합니다.
 
 | permission | 용도 |
 | --- | --- |
@@ -43,6 +55,7 @@ reusable workflow는 다음 input을 받습니다.
 | --- | --- | --- | --- |
 | `repository` | 필수 | 없음 | 감시할 repository. `owner/repo` 형식 |
 | `base_branch` | 필수 | 없음 | merge risk를 비교할 기준 branch |
+| `github_app_client_id` | 필수 | 없음 | GitHub App installation token 발급에 사용할 client ID |
 | `default_branch` | 선택 | 빈 값 | 감시 대상에서 제외할 default branch |
 | `critical_file_patterns` | 선택 | 빈 값 | score에 반영할 critical file wildcard pattern 목록. 줄바꿈으로 구분 |
 | `watcher_version` | 선택 | 빈 값 | 수동 테스트에 사용할 Watcher release tag. 비워두면 workflow ref 기준 |
@@ -150,11 +163,13 @@ WATCHER_BASE_BRANCH=develop \
 WATCHER_DEFAULT_BRANCH=main \
 WATCHER_CRITICAL_FILE_PATTERNS='package-lock.json
 .github/workflows/**' \
-GITHUB_TOKEN=github-token \
+GITHUB_TOKEN=github-app-installation-token \
 OPENAI_API_KEY=openai-api-key \
 DISCORD_WEBHOOK_URL=discord-webhook-url \
 npm run watch
 ```
+
+local 실행에서 `GITHUB_TOKEN`은 GitHub App으로 발급한 installation token 값을 직접 전달합니다.
 
 ## 실서비스 연결 전 테스트
 
@@ -177,13 +192,14 @@ npm test
 | `watcher_version` | 테스트할 Watcher release tag. 비워두면 workflow ref 기준 |
 | `critical_file_patterns` | 테스트할 critical file pattern. 예: `package-lock.json`, `.github/workflows/**` |
 
-3. consumer repository secret을 설정합니다.
+3. consumer repository variable과 secret을 설정합니다.
 
-| secret | 테스트 기준 |
-| --- | --- |
-| `WATCHER_GITHUB_TOKEN` | 테스트 repository를 checkout하고 metadata를 읽을 수 있는 token |
-| `OPENAI_API_KEY` | OpenAI API 호출 가능한 key |
-| `DISCORD_WEBHOOK_URL` | 처음에는 설정하지 않음 |
+| 이름 | 종류 | 테스트 기준 |
+| --- | --- | --- |
+| `WATCHER_GITHUB_APP_CLIENT_ID` | variable | 테스트 repository에 설치된 GitHub App client ID |
+| `WATCHER_GITHUB_APP_PRIVATE_KEY` | secret | 테스트 repository에 설치된 GitHub App private key |
+| `OPENAI_API_KEY` | secret | OpenAI API 호출 가능한 key |
+| `DISCORD_WEBHOOK_URL` | secret | 처음에는 설정하지 않음 |
 
 4. consumer repository의 Actions 화면에서 `Merge Risk Watch` workflow를 수동 실행하고 stdout report를 확인합니다.
 
@@ -197,14 +213,15 @@ Discord 메시지가 정상적으로 도착하면 consumer repository의 예시 
 
 local test는 Watcher 내부 로직이 기대한 입력을 처리하는지 확인합니다. GitHub Actions의 reusable workflow, repository checkout, remote branch fetch, 실제 API 권한, schedule timing은 검증하지 않습니다.
 
-scheduled run은 consumer repository의 실제 remote branch를 fetch하고, `base_branch`와 `default_branch`를 제외한 branch를 대상으로 merge signal과 metadata를 다시 수집합니다. 따라서 local test가 통과해도 consumer repository의 token permission, branch 정리 상태, OpenAI API key, Discord webhook 상태가 잘못되면 scheduled run에서 실패할 수 있습니다.
+scheduled run은 consumer repository의 실제 remote branch를 fetch하고, `base_branch`와 `default_branch`를 제외한 branch를 대상으로 merge signal과 metadata를 다시 수집합니다. 따라서 local test가 통과해도 consumer repository의 GitHub App 설치와 permission, branch 정리 상태, OpenAI API key, Discord webhook 상태가 잘못되면 scheduled run에서 실패할 수 있습니다.
 
 ## Troubleshooting
 
 | 증상 | 확인할 항목 |
 | --- | --- |
 | workflow가 시작되지 않음 | consumer workflow가 `schedule`, `workflow_dispatch` 중 필요한 trigger를 가지고 있는지 확인 |
-| checkout 또는 fetch 실패 | `WATCHER_GITHUB_TOKEN` 권한과 `contents: read` permission 확인 |
+| GitHub App token 발급 실패 | `WATCHER_GITHUB_APP_CLIENT_ID`, `WATCHER_GITHUB_APP_PRIVATE_KEY`, GitHub App 설치 repository 확인 |
+| checkout 또는 fetch 실패 | GitHub App의 `Contents: Read-only` permission과 repository 설치 범위 확인 |
 | PR metadata가 비어 있음 | `pull-requests: read` permission과 commit에 연결된 PR 존재 여부 확인 |
 | check metadata가 비어 있음 | `checks: read` permission과 해당 branch head SHA의 check run 존재 여부 확인 |
 | AI prediction이 `skipped`로 표시됨 | deterministic possibility status가 `critical`인지와 `confirmed_conflict`가 아닌지 확인 |
