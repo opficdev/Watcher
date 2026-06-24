@@ -36,6 +36,8 @@ GitHub App private key를 생성한 뒤 consumer repository에는 다음 variabl
 
 GitHub App은 watched repository에 설치되어 있어야 합니다. token은 workflow 실행 중 생성되며 App에 부여한 repository permission과 설치 범위 안에서만 동작합니다.
 
+GitHub App 설정값은 `docs/github-app-manifest.json`에 기록되어 있습니다. 브라우저에서 `docs/github-app-manifest.html`을 열고 `Register Watcher GitHub App`을 누르면 같은 설정으로 GitHub App 등록 화면을 열 수 있습니다. 등록 후 GitHub App 설정 화면에서 private key를 발급하고 watched repository에 App을 설치합니다.
+
 ## Permissions
 
 consumer workflow에는 다음 permission이 필요합니다. watched repository 접근 권한은 GitHub App installation token이 담당하지만, workflow 자체의 release asset 다운로드와 GitHub Actions context 조회를 위해 유지합니다.

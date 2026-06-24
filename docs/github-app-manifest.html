@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Register Watcher GitHub App</title>
+  </head>
+  <body>
+    <form action="https://github.com/settings/apps/new" method="post">
+      <input id="manifest" name="manifest" type="hidden">
+      <button type="submit">Register Watcher GitHub App</button>
+    </form>
+    <script>
+      document.getElementById("manifest").value = JSON.stringify({
+        name: "Watcher Merge Risk",
+        url: "https://github.com/opficdev/Watcher",
+        description: "Creates installation tokens for Watcher merge risk automation.",
+        public: false,
+        default_permissions: {
+          actions: "read",
+          checks: "read",
+          contents: "read",
+          pull_requests: "read"
+        },
+        default_events: []
+      })
+    </script>
+  </body>
+</html>
