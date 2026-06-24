@@ -3,6 +3,7 @@ import { select as selectTargets } from "./predictionTargetSelector.js"
 import { validateBatch as validateBatchResponse } from "./predictionResponseValidator.js"
 import type {
   AiPrediction,
+  AiPredictionDebugObserver,
   AiPredictionDebugTarget,
   AiPredictionClient,
   AiPredictionEvidencePayload,
@@ -39,10 +40,10 @@ async function predictedResultsFor(
 ): Promise<Map<AiPredictionEvidencePayload, AiPredictionResult>> {
   const targetBranches = targets.map(debugTargetFor)
   const prompt = buildBatchPrompt(targets, options)
-  await options.debugObserver?.onPromptBuilt?.({
+  await notifyDebugObserver("onPromptBuilt", () => options.debugObserver?.onPromptBuilt?.({
     targetBranches,
     prompt
-  })
+  }))
 
   let response: unknown
 
@@ -50,10 +51,10 @@ async function predictedResultsFor(
     response = await client.predict(prompt)
   } catch (error) {
     const errorMessage = errorMessageFor(error)
-    await options.debugObserver?.onPredictionFailed?.({
+    await notifyDebugObserver("onPredictionFailed", () => options.debugObserver?.onPredictionFailed?.({
       targetBranches,
       errorMessage
-    })
+    }))
 
     return new Map(targets.map(target => [
       target,
@@ -61,10 +62,10 @@ async function predictedResultsFor(
     ]))
   }
 
-  await options.debugObserver?.onResponseReceived?.({
+  await notifyDebugObserver("onResponseReceived", () => options.debugObserver?.onResponseReceived?.({
     targetBranches,
     response
-  })
+  }))
 
   try {
     const predictions = validateBatchResponse(response)
@@ -72,15 +73,27 @@ async function predictedResultsFor(
     return resultsByPayloadFor(targets, predictions)
   } catch (error) {
     const errorMessage = errorMessageFor(error)
-    await options.debugObserver?.onPredictionFailed?.({
+    await notifyDebugObserver("onPredictionFailed", () => options.debugObserver?.onPredictionFailed?.({
       targetBranches,
       errorMessage
-    })
+    }))
 
     return new Map(targets.map(target => [
       target,
       failedResultFor(target, errorMessage)
     ]))
+  }
+}
+
+// debug observer 실패가 prediction 흐름을 중단하지 않도록 격리
+async function notifyDebugObserver(
+  eventName: keyof AiPredictionDebugObserver,
+  action: () => Promise<void> | void | undefined
+): Promise<void> {
+  try {
+    await action()
+  } catch (error) {
+    console.warn(`Failed to notify debug observer (${eventName}): ${errorMessageFor(error)}`)
   }
 }
 
