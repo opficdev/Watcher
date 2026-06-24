@@ -46,6 +46,7 @@ reusable workflow는 다음 input을 받습니다.
 | `default_branch` | 선택 | 빈 값 | 감시 대상에서 제외할 default branch |
 | `critical_file_patterns` | 선택 | 빈 값 | score에 반영할 critical file wildcard pattern 목록. 줄바꿈으로 구분 |
 | `watcher_version` | 선택 | 빈 값 | 수동 테스트에 사용할 Watcher release tag. 비워두면 workflow ref 기준 |
+| `upload_debug_artifact` | 선택 | `false` | AI prediction 원인 추적용 debug artifact를 consumer workflow run에 업로드할지 여부 |
 
 `critical_file_patterns`에서 `*`는 단일 path segment 내부를 매칭하고 `**`는 path separator를 포함해 매칭합니다.
 
@@ -123,6 +124,32 @@ AI provider가 실패해도 deterministic possibility report는 유지됩니다.
 
 Report에는 `Low` section, AI prediction `skipped` 상태, branch `updated` 시각, provider error 요약을 유지합니다. Pull Request metadata는 내부 evidence로만 사용할 수 있으며 Markdown report에는 출력하지 않습니다.
 
+## Debug artifact
+
+AI prediction 입력이나 provider 응답을 확인해야 할 때 consumer workflow에서 `upload_debug_artifact`를 `true`로 설정합니다.
+
+```yaml
+with:
+  upload_debug_artifact: true
+```
+
+이 옵션을 켜면 consumer repository의 해당 GitHub Actions run에 `watcher-debug` artifact가 업로드됩니다. Watcher repository가 아니라 reusable workflow를 호출한 consumer repository의 Actions 화면에서 다운로드합니다.
+
+artifact에는 다음 파일이 포함됩니다.
+
+| 파일 | 내용 |
+| --- | --- |
+| `run.json` | repository, base branch, default branch, critical file patterns, Watcher workflow ref |
+| `branch-selection.json` | 수집된 branch, 감시 대상 branch, 제외된 branch와 사유 |
+| `deterministic-evidence.json` | git merge signal, changed files, changed hunks, check/PR metadata, deterministic risk 결과 |
+| `ai-target-selection.json` | AI 호출 대상 branch와 skipped branch 사유 |
+| `ai-prompt.json` | OpenAI에 전달한 system prompt, user prompt, response shape |
+| `ai-response.json` | provider가 반환한 raw response |
+| `ai-error.json` | provider 호출 또는 response validation 실패 요약. 실패가 없으면 생성되지 않을 수 있음 |
+| `report.md` | 최종 Markdown report |
+
+debug artifact에는 `GITHUB_TOKEN`, `WATCHER_GITHUB_TOKEN`, `OPENAI_API_KEY`, `DISCORD_WEBHOOK_URL`을 기록하지 않습니다. raw file content와 raw diff 전문도 포함하지 않습니다.
+
 ## Report channel
 
 Merge risk report는 Markdown으로 생성됩니다. consumer repository에 `DISCORD_WEBHOOK_URL` secret이 있으면 Discord webhook으로 전송하고, 없으면 stdout으로 출력합니다.
@@ -150,6 +177,7 @@ WATCHER_BASE_BRANCH=develop \
 WATCHER_DEFAULT_BRANCH=main \
 WATCHER_CRITICAL_FILE_PATTERNS='package-lock.json
 .github/workflows/**' \
+WATCHER_DEBUG_ARTIFACT_DIR=/tmp/watcher-debug \
 GITHUB_TOKEN=github-token \
 OPENAI_API_KEY=openai-api-key \
 DISCORD_WEBHOOK_URL=discord-webhook-url \
@@ -176,6 +204,7 @@ npm test
 | `default_branch` | 제외할 default branch. 예: `main` |
 | `watcher_version` | 테스트할 Watcher release tag. 비워두면 workflow ref 기준 |
 | `critical_file_patterns` | 테스트할 critical file pattern. 예: `package-lock.json`, `.github/workflows/**` |
+| `upload_debug_artifact` | 문제 원인 추적이 필요할 때만 `true` |
 
 3. consumer repository secret을 설정합니다.
 

@@ -10,6 +10,11 @@ on:
         required: false
         type: string
         default: ""
+      upload_debug_artifact:
+        description: "AI prediction 원인 추적용 debug artifact를 업로드할지 여부"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -25,6 +30,7 @@ jobs:
       base_branch: develop
       default_branch: main
       watcher_version: ${{ inputs.watcher_version }}
+      upload_debug_artifact: ${{ inputs.upload_debug_artifact || false }}
       critical_file_patterns: |
         package-lock.json
         .github/workflows/**
