@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { writerFor } from "../../src/debug/debugArtifact.js"
@@ -51,6 +51,35 @@ test("writes debug artifact text", async () => {
       "## Merge Risk Report\n"
     )
   } finally {
+    await rm(directory, {
+      recursive: true,
+      force: true
+    })
+  }
+})
+
+// artifact 저장 실패가 main workflow 실패로 전파되지 않는지 확인
+test("warns and continues when debug artifact write fails", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "watcher-debug-"))
+  const filePath = join(directory, "not-directory")
+  const originalWarn = console.warn
+  const warnings: unknown[][] = []
+
+  console.warn = (...values: unknown[]) => {
+    warnings.push(values)
+  }
+
+  try {
+    await writeFile(filePath, "not a directory")
+
+    const writer = writerFor(filePath)
+    assert.ok(writer)
+
+    await assert.doesNotReject(writer.writeText("report.md", "## Merge Risk Report\n"))
+    assert.equal(warnings.length, 1)
+    assert.match(String(warnings[0]?.[0]), /Failed to write debug artifact report\.md:/)
+  } finally {
+    console.warn = originalWarn
     await rm(directory, {
       recursive: true,
       force: true

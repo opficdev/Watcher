@@ -20,11 +20,19 @@ class FileDebugArtifactWriter implements DebugArtifactWriter {
   }
 
   async writeText(name: string, value: string): Promise<void> {
-    await mkdir(this.directory, {
-      recursive: true
-    })
-    await writeFile(join(this.directory, name), value, "utf8")
+    try {
+      await mkdir(this.directory, {
+        recursive: true
+      })
+      await writeFile(join(this.directory, name), value, "utf8")
+    } catch (error) {
+      console.warn(`Failed to write debug artifact ${name}: ${errorMessageFor(error)}`)
+    }
   }
+}
+
+function errorMessageFor(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function jsonValueFor(_key: string, value: unknown): unknown {
