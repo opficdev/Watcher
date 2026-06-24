@@ -12,28 +12,39 @@ consumer repository에 workflow 파일 하나를 추가합니다. 전체 예시�
 
 예시에서 consumer repository에 맞게 `base_branch`, `default_branch`, `critical_file_patterns`, secret 이름을 조정합니다.
 
-## Secrets
+## Consumer repository secrets
 
-consumer repository에는 다음 secret을 설정합니다.
+consumer repository의 `Settings` > `Secrets and variables` > `Actions` > `Repository secrets`에 다음 secret을 설정합니다.
 
 | secret | 필수 여부 | 용도 |
 | --- | --- | --- |
-| `WATCHER_GITHUB_TOKEN` | 필수 | watched repository checkout, branch fetch, PR/check metadata 조회 |
+| `WATCHER_GITHUB_TOKEN` | 필수 | watched repository checkout, branch fetch, PR/check metadata 조회에 사용할 fine-grained PAT |
 | `OPENAI_API_KEY` | 필수 | OpenAI prediction 생성 |
 | `DISCORD_WEBHOOK_URL` | 선택 | Discord webhook report 전송. 미설정 시 stdout으로 출력 |
 
-`WATCHER_GITHUB_TOKEN`은 watched repository를 checkout하고 branch, check, pull request metadata를 읽을 수 있어야 합니다. public repository라도 metadata 조회와 private repository 확장을 고려해 explicit token을 사용합니다.
+`WATCHER_GITHUB_TOKEN`은 fine-grained personal access token을 권장합니다. public repository라도 checkout, branch fetch, check metadata, pull request metadata 조회를 같은 방식으로 처리하기 위해 explicit token을 사용합니다.
 
-## Permissions
+### `WATCHER_GITHUB_TOKEN` 권한
 
-consumer workflow에는 다음 permission이 필요합니다.
+fine-grained PAT는 GitHub `Settings` > `Developer settings` > `Personal access tokens` > `Fine-grained tokens`에서 생성합니다. 생성 시 Repository access는 감시 대상 repository만 선택합니다. 모든 repository 접근 권한은 필요하지 않습니다.
+
+| 설정 | 값 |
+| --- | --- |
+| Repository access | 감시 대상 repository만 선택 |
+| Contents | Read-only |
+| Checks | Read-only |
+| Pull requests | Read-only |
+| Metadata | Read-only. GitHub가 자동 포함 |
+
+`Contents: Read-only`는 checkout과 branch fetch에 필요합니다. `Checks: Read-only`는 branch head SHA의 check run 조회에 필요합니다. `Pull requests: Read-only`는 commit에 연결된 PR metadata 조회에 필요합니다.
+
+### Consumer workflow permissions
+
+consumer workflow에는 다음 `permissions`가 필요합니다. 이 값은 GitHub Actions workflow token 권한이며, 위의 fine-grained PAT repository permission과 별개입니다.
 
 | permission | 용도 |
 | --- | --- |
-| `contents: read` | repository checkout과 branch fetch |
-| `actions: read` | workflow 실행 context 조회 |
-| `checks: read` | branch check metadata 조회 |
-| `pull-requests: read` | commit에 연결된 PR metadata 조회 |
+| `contents: read` | Watcher source checkout 또는 release asset 다운로드 |
 
 ## Inputs
 
@@ -155,6 +166,8 @@ debug artifact에는 `GITHUB_TOKEN`, `WATCHER_GITHUB_TOKEN`, `OPENAI_API_KEY`, `
 
 Merge risk report는 Markdown으로 생성됩니다. consumer repository에 `DISCORD_WEBHOOK_URL` secret이 있으면 Discord webhook으로 전송하고, 없으면 stdout으로 출력합니다.
 
+현재 webhook report channel은 Discord incoming webhook 전용입니다. Slack incoming webhook은 payload 형식이 달라 `DISCORD_WEBHOOK_URL`에 Slack URL을 넣어도 동작하지 않습니다.
+
 Discord webhook으로 전송할 때는 Discord message length 제한에 맞춰 긴 report를 여러 메시지로 나눕니다. 전송 실패가 발생해도 webhook URL secret이 error message에 그대로 노출되지 않도록 처리합니다.
 
 ## Local development
@@ -171,6 +184,8 @@ npm test
 
 실제 runner를 local에서 실행하려면 watched repository checkout과 secret 환경 변수가 필요합니다. 이 실행은 GitHub API, OpenAI API, Discord webhook을 호출할 수 있으므로 필요한 경우에만 사용합니다.
 
+local 실행에서는 consumer repository secret 이름인 `WATCHER_GITHUB_TOKEN`이 아니라 runner가 읽는 환경 변수 `GITHUB_TOKEN`에 같은 fine-grained PAT 값을 넣습니다.
+
 ```sh
 WATCHER_REPOSITORY=owner/repo \
 WATCHER_REPOSITORY_PATH=/path/to/watched-repository \
@@ -179,7 +194,7 @@ WATCHER_DEFAULT_BRANCH=main \
 WATCHER_CRITICAL_FILE_PATTERNS='package-lock.json
 .github/workflows/**' \
 WATCHER_DEBUG_ARTIFACT_DIR=/tmp/watcher-debug \
-GITHUB_TOKEN=github-token \
+GITHUB_TOKEN=fine-grained-pat \
 OPENAI_API_KEY=openai-api-key \
 DISCORD_WEBHOOK_URL=discord-webhook-url \
 npm run watch
@@ -187,7 +202,7 @@ npm run watch
 
 ## 실서비스 연결 전 테스트
 
-consumer repository에 scheduled run과 Discord webhook을 붙이기 전에 다음 순서로 확인합니다.
+consumer repository에 Discord webhook 전송을 붙이거나 scheduled run을 운영하기 전에 다음 순서로 확인합니다.
 
 1. Watcher repository에서 local 검증을 먼저 실행합니다.
 
@@ -211,17 +226,17 @@ npm test
 
 | secret | 테스트 기준 |
 | --- | --- |
-| `WATCHER_GITHUB_TOKEN` | 테스트 repository를 checkout하고 metadata를 읽을 수 있는 token |
+| `WATCHER_GITHUB_TOKEN` | 테스트 repository만 Repository access로 선택한 fine-grained PAT |
 | `OPENAI_API_KEY` | OpenAI API 호출 가능한 key |
 | `DISCORD_WEBHOOK_URL` | 처음에는 설정하지 않음 |
 
-4. consumer repository의 Actions 화면에서 `Merge Risk Watch` workflow를 수동 실행하고 stdout report를 확인합니다.
+4. consumer repository의 Actions 화면에서 `Merge Risk Watch` workflow를 `workflow_dispatch`로 수동 실행하고 stdout report를 확인합니다.
 
 `DISCORD_WEBHOOK_URL`을 비워 두면 Discord로 전송하지 않고 GitHub Actions log에 Markdown report를 출력합니다. 이 단계에서 branch 수집, merge signal 수집, OpenAI prediction, report 생성이 정상인지 확인합니다.
 
 5. stdout report가 정상일 때만 consumer repository secret에 `DISCORD_WEBHOOK_URL`을 추가하고 같은 workflow를 다시 수동 실행합니다.
 
-Discord 메시지가 정상적으로 도착하면 consumer repository의 예시 workflow에 `schedule` trigger를 유지해 실서비스 실행으로 전환합니다.
+Discord 메시지가 정상적으로 도착하면 consumer repository의 예시 workflow에 `schedule` trigger를 유지하거나 운영 시간에 맞게 조정해 실서비스 실행으로 전환합니다.
 
 ## Local test와 scheduled run 차이
 
@@ -234,10 +249,10 @@ scheduled run은 consumer repository의 실제 remote branch를 fetch하고, `ba
 | 증상 | 확인할 항목 |
 | --- | --- |
 | workflow가 시작되지 않음 | consumer workflow가 `schedule`, `workflow_dispatch` 중 필요한 trigger를 가지고 있는지 확인 |
-| checkout 또는 fetch 실패 | `WATCHER_GITHUB_TOKEN` 권한과 `contents: read` permission 확인 |
-| PR metadata가 비어 있음 | `pull-requests: read` permission과 commit에 연결된 PR 존재 여부 확인 |
-| check metadata가 비어 있음 | `checks: read` permission과 해당 branch head SHA의 check run 존재 여부 확인 |
+| checkout 또는 fetch 실패 | `WATCHER_GITHUB_TOKEN`의 Repository access, `Contents: Read-only`, workflow `contents: read` 확인 |
+| PR metadata가 비어 있음 | `WATCHER_GITHUB_TOKEN`의 `Pull requests: Read-only`, commit에 연결된 PR 존재 여부 확인 |
+| check metadata가 비어 있음 | `WATCHER_GITHUB_TOKEN`의 `Checks: Read-only`, 해당 branch head SHA의 check run 존재 여부 확인 |
 | AI prediction이 `skipped`로 표시됨 | deterministic possibility status가 `critical`인지와 `confirmed_conflict`가 아닌지 확인 |
 | AI prediction이 `failed`로 표시됨 | `OPENAI_API_KEY` secret, OpenAI API 응답 형식, rate limit 상태 확인 |
-| Discord 전송이 되지 않음 | `DISCORD_WEBHOOK_URL` secret과 webhook channel 권한 확인 |
+| Discord 전송이 되지 않음 | `DISCORD_WEBHOOK_URL` secret, Discord incoming webhook URL, webhook channel 권한 확인 |
 | merge된 branch가 계속 감시됨 | GitHub `Automatically delete head branches` 설정과 원격 branch 삭제 상태 확인 |
