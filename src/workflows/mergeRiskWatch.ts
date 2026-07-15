@@ -123,7 +123,7 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
   const branchSelection = selectBranchesWithReasons(repositoryBranches, {
     baseBranch: options.baseBranch,
     defaultBranch: options.defaultBranch
-  })
+  }, generatedAt)
   const branches = branchSelection.selected
   const inputs: BranchRiskAnalysisInput[] = []
 
@@ -244,7 +244,7 @@ function branchSourceFor(options: MergeRiskWatchOptions): {
       const lines = await gitLines(options.repositoryPath, [
         "for-each-ref",
         `refs/remotes/${options.remoteName}`,
-        "--format=%(refname:short)%09%(objectname)%09%(authorname)%09%(authordate:iso-strict)"
+        "--format=%(refname:short)%09%(objectname)%09%(authorname)%09%(committerdate:iso-strict)"
       ])
 
       const branches = lines
