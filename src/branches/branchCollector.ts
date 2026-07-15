@@ -5,6 +5,7 @@ export type BranchSource = {
   listBranches(): Promise<RepositoryBranch[]>
 }
 
+// BranchSource에서 branch를 수집하고 감시 대상 BranchContext만 반환
 export async function collectBranchContexts(
   source: BranchSource,
   options: BranchSelectionOptions

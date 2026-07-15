@@ -10,6 +10,7 @@ import type {
 const activeBranchWindowMilliseconds = 14 * 24 * 60 * 60 * 1_000
 const maximumActiveBranchCount = 30
 
+// 제외 사유가 필요 없는 호출자를 위해 선택된 BranchContext 목록만 반환
 export function select(
   branches: RepositoryBranch[],
   options: BranchSelectionOptions
@@ -17,6 +18,7 @@ export function select(
   return selectWithReasons(branches, options).selected
 }
 
+// 활성 기간과 최대 개수 기준을 적용해 선택 branch와 제외 사유를 함께 구성
 export function selectWithReasons(
   branches: RepositoryBranch[],
   options: BranchSelectionOptions,
@@ -57,6 +59,7 @@ export function selectWithReasons(
   }
 }
 
+// 제외된 branch의 식별 정보와 제외 사유를 기록할 모델로 변환
 function excludedBranchFor(
   branch: RepositoryBranch,
   reason: BranchExclusionReason
@@ -68,6 +71,7 @@ function excludedBranchFor(
   }
 }
 
+// 감시 대상으로 선택된 branch를 분석 단계의 BranchContext로 변환
 function branchContextFor(
   branch: RepositoryBranch,
   options: BranchSelectionOptions
@@ -83,6 +87,7 @@ function branchContextFor(
   }
 }
 
+// base, default, 갱신 시각 기준으로 branch의 제외 사유를 결정
 function exclusionReasonFor(
   branch: RepositoryBranch,
   options: BranchSelectionOptions,
@@ -109,6 +114,7 @@ function exclusionReasonFor(
   return undefined
 }
 
+// 활성 branch를 최근 갱신 순으로 정렬하고 동률이면 이름 순으로 정렬
 function compareActiveBranches(
   branch: RepositoryBranch,
   other: RepositoryBranch
