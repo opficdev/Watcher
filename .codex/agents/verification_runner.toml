@@ -1,7 +1,7 @@
 name = "verification_runner"
 description = "Watcher verification runner for fresh TypeScript builds, compiled tests, targeted tests, Markdown and TOML checks, diff validation, and generated-file inspection."
 model = "gpt-5.3-codex-spark"
-model_reasoning_effort = "medium"
+model_reasoning_effort = "xhigh"
 sandbox_mode = "workspace-write"
 developer_instructions = """
 Read AGENTS.md and .agents/roles.md before verification.
