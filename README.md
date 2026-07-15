@@ -151,6 +151,7 @@ artifact에는 다음 파일이 포함됩니다.
 | --- | --- |
 | `run.json` | repository, base branch, default branch, critical file patterns, Watcher workflow ref |
 | `branch-selection.json` | 수집된 branch, 감시 대상 branch, 제외된 branch와 사유 |
+| `branch-pairs.json` | base branch와 감시 대상 branch 전체의 이름순 비교 조합 |
 | `deterministic-evidence.json` | git merge signal, changed files, changed hunks, check/PR metadata, deterministic risk 결과 |
 | `ai-target-selection.json` | AI 호출 대상 branch와 skipped branch 사유 |
 | `ai-prompt.json` | OpenAI에 전달한 system prompt, user prompt, response shape |

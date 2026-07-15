@@ -2,6 +2,7 @@ import { execFile } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { resolve } from "node:path"
 import { promisify } from "node:util"
+import { build as buildBranchComparisonPairs } from "../branches/branchPairBuilder.js"
 import { selectWithReasons as selectBranchesWithReasons } from "../branches/branchSelector.js"
 import { collectGitMergeSignal } from "../git/gitMergeSignalCollector.js"
 import { analyze as analyzeBranchMergeRisks } from "../risks/riskAnalyzer.js"
@@ -125,12 +126,16 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
     defaultBranch: options.defaultBranch
   }, generatedAt)
   const branches = branchSelection.selected
+  const pairs = buildBranchComparisonPairs(options.baseBranch, branches)
   const inputs: BranchRiskAnalysisInput[] = []
 
   await debugArtifactWriter?.writeJson("branch-selection.json", {
     repositoryBranches,
     selectedBranches: branchSelection.selected,
     excludedBranches: branchSelection.excluded
+  })
+  await debugArtifactWriter?.writeJson("branch-pairs.json", {
+    pairs
   })
 
   for (const branch of branches) {

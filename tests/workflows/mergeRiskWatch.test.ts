@@ -125,6 +125,7 @@ test("writes merge risk debug artifacts", async () => {
       "ai-response.json",
       "ai-result.json",
       "ai-target-selection.json",
+      "branch-pairs.json",
       "branch-selection.json",
       "deterministic-evidence.json",
       "report.md",
@@ -157,6 +158,12 @@ test("writes merge risk debug artifacts", async () => {
         reason?: string
       }>
     }>(fixture.debugArtifactDir, "branch-selection.json")
+    const branchPairsArtifact = await readJson<{
+      pairs?: Array<{
+        leftBranchName?: string
+        rightBranchName?: string
+      }>
+    }>(fixture.debugArtifactDir, "branch-pairs.json")
     const combinedArtifact = (await Promise.all(files.map(file =>
       readFile(join(fixture.debugArtifactDir, file), "utf8")
     ))).join("\n")
@@ -185,6 +192,16 @@ test("writes merge risk debug artifacts", async () => {
     })), [{
       name: "main",
       reason: "base_branch"
+    }])
+    assert.deepEqual(branchPairsArtifact.pairs, [{
+      leftBranchName: "feature/critical",
+      rightBranchName: "feature/critical-peer"
+    }, {
+      leftBranchName: "feature/critical",
+      rightBranchName: "main"
+    }, {
+      leftBranchName: "feature/critical-peer",
+      rightBranchName: "main"
     }])
     assert.doesNotMatch(combinedArtifact, /openai-secret/)
     assert.doesNotMatch(combinedArtifact, /webhook-secret/)

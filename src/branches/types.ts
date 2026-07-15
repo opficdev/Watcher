@@ -42,6 +42,11 @@ export type BranchSelectionResult = {
   excluded: ExcludedBranch[]
 }
 
+export type BranchComparisonPair = {
+  leftBranchName: string
+  rightBranchName: string
+}
+
 export type BranchContext = {
   baseBranch: string
   name: string
