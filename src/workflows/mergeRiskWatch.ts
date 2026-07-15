@@ -123,7 +123,7 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
   const branchSelection = selectBranchesWithReasons(repositoryBranches, {
     baseBranch: options.baseBranch,
     defaultBranch: options.defaultBranch
-  })
+  }, generatedAt)
   const branches = branchSelection.selected
   const inputs: BranchRiskAnalysisInput[] = []
 
@@ -184,8 +184,11 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
     {
       debugObserver: debugArtifactWriter
         ? {
+          // 생성된 AI prompt를 debug artifact로 기록
           onPromptBuilt: event => debugArtifactWriter.writeJson("ai-prompt.json", event),
+          // 받은 AI response를 debug artifact로 기록
           onResponseReceived: event => debugArtifactWriter.writeJson("ai-response.json", event),
+          // AI prediction 실패 정보를 debug artifact로 기록
           onPredictionFailed: event => debugArtifactWriter.writeJson("ai-error.json", event)
         }
         : undefined
@@ -215,6 +218,7 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
   }
 }
 
+// AI 대상 선택 artifact에 기록할 branch 식별 정보만 추출
 function aiDebugTargetFor(payload: AiPredictionEvidencePayload): {
   branchName: string
   baseBranch: string
@@ -225,6 +229,7 @@ function aiDebugTargetFor(payload: AiPredictionEvidencePayload): {
   }
 }
 
+// AI prediction 제외 branch의 deterministic 제외 사유를 분류
 function aiSkippedReasonFor(payload: AiPredictionEvidencePayload): "not_target" | "confirmed_conflict" {
   return payload.possibility.reasons.some(reason => reason.code === "confirmed_conflict")
     ? "confirmed_conflict"
@@ -240,11 +245,12 @@ function branchSourceFor(options: MergeRiskWatchOptions): {
     : undefined
 
   return {
+    // remote tracking branch와 선택적 GitHub metadata를 함께 수집
     listBranches: async () => {
       const lines = await gitLines(options.repositoryPath, [
         "for-each-ref",
         `refs/remotes/${options.remoteName}`,
-        "--format=%(refname:short)%09%(objectname)%09%(authorname)%09%(authordate:iso-strict)"
+        "--format=%(refname:short)%09%(objectname)%09%(authorname)%09%(committerdate:iso-strict)"
       ])
 
       const branches = lines
@@ -278,6 +284,7 @@ export function githubMetadataClientFor(options: MergeRiskWatchOptions): {
   const [owner, repo] = repositoryPartsFrom(options.repository)
 
   return {
+    // commit ref의 GitHub check run metadata를 조회하고 실패 시 빈 목록으로 격리
     checksFor: async ref => {
       try {
         const response = await githubJson<GitHubCheckRunsResponse>(options, [
@@ -302,6 +309,7 @@ export function githubMetadataClientFor(options: MergeRiskWatchOptions): {
         return []
       }
     },
+    // commit과 연결된 pull request에서 branch 일치 항목을 우선하고 없으면 첫 metadata를 사용
     pullRequestFor: async (sha, branchName) => {
       const pulls = await githubJson<GitHubPullRequestResponse[]>(options, [
         "repos",
@@ -327,6 +335,7 @@ export function githubMetadataClientFor(options: MergeRiskWatchOptions): {
   }
 }
 
+// unknown error를 경고에 사용할 문자열로 변환
 function warningMessageFor(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }

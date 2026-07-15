@@ -8,6 +8,7 @@ import type { GitMergeSignal, GitMergeSignalCollectionOptions } from "./types.js
 
 const execFileAsync = promisify(execFile)
 
+// remote branch를 가져와 merge base, 변경 파일, 가상 merge 결과를 수집
 export async function collectGitMergeSignal(
   branch: BranchContext,
   options: GitMergeSignalCollectionOptions
@@ -56,6 +57,7 @@ export async function collectGitMergeSignal(
   }
 }
 
+// 임시 worktree에서 merge를 시도해 repository 변경 없이 충돌 여부를 확인
 async function runVirtualMerge(input: {
   branch: BranchContext
   options: GitMergeSignalCollectionOptions
@@ -135,6 +137,7 @@ async function runVirtualMerge(input: {
   }
 }
 
+// 지정 branch의 최신 remote ref를 로컬 remote tracking ref로 갱신
 async function fetchBranch(
   repositoryPath: string,
   remote: string,
@@ -148,11 +151,13 @@ async function fetchBranch(
   ])
 }
 
+// git stdout을 비어 있지 않은 line 목록으로 변환
 async function gitLines(cwd: string, args: string[]): Promise<string[]> {
   const output = await gitOutput(cwd, args)
   return output.split("\n").filter(line => line.length)
 }
 
+// git command 성공 stdout을 반환하고 실패 결과를 오류로 변환
 async function gitOutput(cwd: string, args: string[]): Promise<string> {
   const result = await gitResult(cwd, args)
 
@@ -163,6 +168,7 @@ async function gitOutput(cwd: string, args: string[]): Promise<string> {
   return result.stdout.trim()
 }
 
+// git command를 실행하고 성공과 실패를 동일한 결과 구조로 정규화
 async function gitResult(
   cwd: string,
   args: string[]
@@ -194,6 +200,7 @@ async function gitResult(
   }
 }
 
+// unknown git 오류를 signal에 기록할 문자열로 변환
 function formatGitError(error: unknown): string {
   if (error instanceof Error) {
     return error.message.trim()

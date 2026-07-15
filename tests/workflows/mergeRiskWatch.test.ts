@@ -147,6 +147,16 @@ test("writes merge risk debug artifacts", async () => {
         status?: string
       }>
     }>(fixture.debugArtifactDir, "deterministic-evidence.json")
+    const branchSelectionArtifact = await readJson<{
+      selectedBranches?: Array<{
+        name?: string
+        updatedAt?: string
+      }>
+      excludedBranches?: Array<{
+        name?: string
+        reason?: string
+      }>
+    }>(fixture.debugArtifactDir, "branch-selection.json")
     const combinedArtifact = (await Promise.all(files.map(file =>
       readFile(join(fixture.debugArtifactDir, file), "utf8")
     ))).join("\n")
@@ -161,6 +171,21 @@ test("writes merge risk debug artifacts", async () => {
     assert.equal(deterministicArtifact.risks?.[0]?.status, "critical")
     assert.equal(aiResultArtifact.predictions?.[0]?.status, "predicted")
     assert.equal(aiResultArtifact.predictions?.[0]?.branchName, "feature/critical")
+    assert.deepEqual(branchSelectionArtifact.selectedBranches?.map(branch => branch.name), [
+      "feature/critical",
+      "feature/critical-peer"
+    ])
+    assert.deepEqual(branchSelectionArtifact.selectedBranches?.map(branch => branch.updatedAt), [
+      fixture.committerDate,
+      fixture.committerDate
+    ])
+    assert.deepEqual(branchSelectionArtifact.excludedBranches?.map(branch => ({
+      name: branch.name,
+      reason: branch.reason
+    })), [{
+      name: "main",
+      reason: "base_branch"
+    }])
     assert.doesNotMatch(combinedArtifact, /openai-secret/)
     assert.doesNotMatch(combinedArtifact, /webhook-secret/)
     assert.doesNotMatch(combinedArtifact, /feature critical content/)
@@ -311,12 +336,18 @@ function jsonResponse(body: unknown): Response {
 async function createWorkflowGitFixture(): Promise<{
   repositoryPath: string
   debugArtifactDir: string
+  committerDate: string
   remove(): Promise<void>
 }> {
   const root = await mkdtemp(join(tmpdir(), "watcher-workflow-fixture-"))
   const repositoryPath = join(root, "repository")
   const remotePath = join(root, "remote.git")
   const debugArtifactDir = join(root, "debug")
+  const committerDate = new Date(Math.floor(Date.now() / 1_000) * 1_000).toISOString()
+  const commitDates = {
+    GIT_AUTHOR_DATE: "2000-01-01T00:00:00.000Z",
+    GIT_COMMITTER_DATE: committerDate
+  }
 
   await git(root, ["init", "--initial-branch=main", repositoryPath])
   await git(repositoryPath, ["config", "user.email", "opfic@example.com"])
@@ -328,12 +359,12 @@ async function createWorkflowGitFixture(): Promise<{
 
   await git(repositoryPath, ["checkout", "-b", "feature/critical"])
   await writeFile(join(repositoryPath, "critical.txt"), "feature critical content\n")
-  await git(repositoryPath, ["commit", "-am", "feature critical"])
+  await git(repositoryPath, ["commit", "-am", "feature critical"], commitDates)
 
   await git(repositoryPath, ["checkout", "main"])
   await git(repositoryPath, ["checkout", "-b", "feature/critical-peer"])
   await writeFile(join(repositoryPath, "critical.txt"), "peer critical content\n")
-  await git(repositoryPath, ["commit", "-am", "feature critical peer"])
+  await git(repositoryPath, ["commit", "-am", "feature critical peer"], commitDates)
 
   await git(repositoryPath, ["checkout", "main"])
   await git(root, ["init", "--bare", remotePath])
@@ -345,6 +376,7 @@ async function createWorkflowGitFixture(): Promise<{
   return {
     repositoryPath,
     debugArtifactDir,
+    committerDate,
     async remove(): Promise<void> {
       await rm(root, { recursive: true, force: true })
     }
@@ -376,9 +408,17 @@ async function suppressConsoleWarn<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
-async function git(cwd: string, args: string[]): Promise<string> {
+async function git(
+  cwd: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = {}
+): Promise<string> {
   const result = await execFileAsync("git", args, {
     cwd,
+    env: {
+      ...process.env,
+      ...env
+    },
     maxBuffer: 10 * 1024 * 1024
   })
 

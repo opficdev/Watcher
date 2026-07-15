@@ -28,6 +28,8 @@ export type BranchSelectionOptions = {
 export type BranchExclusionReason =
   | "base_branch"
   | "default_branch"
+  | "stale_branch"
+  | "branch_limit"
 
 export type ExcludedBranch = {
   name: string

@@ -170,6 +170,7 @@ function predictionKeyFor(
   return `${baseBranch}\u0000${branchName}`
 }
 
+// debug artifact에서 branch를 식별할 최소 metadata를 구성
 function debugTargetFor(payload: AiPredictionEvidencePayload): AiPredictionDebugTarget {
   return {
     branchName: payload.branch.name,
