@@ -40,6 +40,7 @@ test("collects four conflict versions and commit metadata without repository mut
 
     assert.deepEqual(after, before)
     assert.equal(result?.errorMessage, undefined)
+    assert.deepEqual(result?.overlapFiles, ["src/value.ts"])
     assert.equal(result?.evidence.length, 1)
     assert.equal(evidence?.kind, "confirmed_conflict")
     assert.equal(evidence?.filePath, "src/value.ts")
@@ -246,9 +247,11 @@ test("collects only overlapping clean hunks without repository mutation", async 
     assert.deepEqual(overlapAfter, overlapBefore)
     assert.deepEqual(disjointAfter, disjointBefore)
     assert.equal(overlap?.evidence.length, 1)
+    assert.deepEqual(overlap?.overlapFiles, ["src/clean.txt"])
     assert.equal(overlap?.evidence[0]?.kind, "clean_hunk_overlap")
     assert.match(overlap?.evidence[0]?.mergedSnippet.content ?? "", /shared change/)
     assert.equal(disjoint?.errorMessage, undefined)
+    assert.deepEqual(disjoint?.overlapFiles, ["src/disjoint.txt"])
     assert.deepEqual(disjoint?.evidence, [])
   } finally {
     await overlapFixture.remove()

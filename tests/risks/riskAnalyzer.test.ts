@@ -7,6 +7,132 @@ import {
   type BranchRiskAnalysisInput,
   type GitMergeSignal
 } from "../../src/index.js"
+import { buildGraph } from "../../src/risks/conflictGraphBuilder.js"
+import { analyzeGraph } from "../../src/risks/riskAnalyzer.js"
+import type { BranchConflictGraphEdge } from "../../src/risks/types.js"
+
+test("keeps confirmed graph conflict above every auxiliary reason", () => {
+  const feature = branch("feature/a", [{
+    name: "CI",
+    status: "completed",
+    conclusion: "failure"
+  }])
+  const graph = buildGraph("main", [feature, branch("feature/b")], [
+    graphEdge("feature/a", "feature/b", "confirmed_conflict", [{
+      code: "confirmed_conflict",
+      files: ["src/conflict.ts"]
+    }]),
+    graphEdge("feature/a", "main", "potential_overlap", [{
+      code: "same_file_overlap",
+      files: ["package-lock.json"]
+    }])
+  ])
+  const [risk] = analyzeGraph(graph, [input("feature/a", {
+    status: "clean",
+    changedFiles: ["package-lock.json"],
+    conflictFiles: []
+  }, [], feature)], {
+    criticalFilePatterns: ["package-lock.json"]
+  })
+
+  assert.equal(risk?.score, 100)
+  assert.equal(risk?.status, BranchRiskStatus.Critical)
+  assert.deepEqual(risk?.reasons, [{
+    code: "confirmed_conflict",
+    message: "branch 조합의 virtual merge에서 conflict가 확인됨",
+    scoreImpact: 100,
+    files: ["src/conflict.ts"],
+    branches: ["feature/b"]
+  }])
+})
+
+test("aggregates graph overlap reasons once and preserves input order", () => {
+  const featureA = branch("feature/a")
+  const featureB = branch("feature/b")
+  const graph = buildGraph("main", [featureA, featureB], [
+    graphEdge("feature/a", "feature/b", "potential_overlap", [{
+      code: "same_hunk_overlap",
+      files: ["src/shared.ts"]
+    }, {
+      code: "same_file_overlap",
+      files: ["src/shared.ts"]
+    }]),
+    graphEdge("feature/a", "main", "potential_overlap", [{
+      code: "same_file_overlap",
+      files: ["src/base.ts"]
+    }]),
+    graphEdge("feature/b", "main", "potential_overlap", [{
+      code: "same_file_overlap",
+      files: ["src/base.ts"]
+    }])
+  ])
+  const risks = analyzeGraph(graph, [
+    input("feature/b", cleanSignal(), [], featureB),
+    input("feature/a", cleanSignal(), [], featureA)
+  ])
+
+  assert.deepEqual(risks.map(risk => risk.branchName), [
+    "feature/b",
+    "feature/a"
+  ])
+  assert.deepEqual(risks.map(risk => risk.score), [85, 85])
+  assert.deepEqual(risks[0]?.reasons, [{
+    code: "same_hunk_overlap",
+    message: "다른 branch와 같은 hunk를 수정함",
+    scoreImpact: 55,
+    files: ["src/shared.ts"],
+    branches: ["feature/a"]
+  }, {
+    code: "same_file_overlap",
+    message: "다른 branch와 같은 파일을 수정함",
+    scoreImpact: 30,
+    files: ["src/base.ts", "src/shared.ts"],
+    branches: ["feature/a", "main"]
+  }])
+})
+
+test("maps graph errors and branch auxiliary signals to existing risk reasons", () => {
+  const feature = branch("feature/a", [{
+    name: "CI",
+    status: "completed",
+    conclusion: "failure"
+  }])
+  const graph = buildGraph("main", [feature], [
+    graphEdge("feature/a", "main", "error", [{
+      code: "code_context_failed"
+    }])
+  ])
+  const [risk] = analyzeGraph(graph, [input("feature/a", {
+    status: "clean",
+    changedFiles: ["package-lock.json"],
+    conflictFiles: []
+  }, [], feature)], {
+    criticalFilePatterns: ["package-lock.json"]
+  })
+
+  assert.equal(risk?.score, 85)
+  assert.equal(risk?.status, BranchRiskStatus.Critical)
+  assert.deepEqual(reasonCodes(risk), [
+    "merge_check_failed",
+    "failed_check",
+    "critical_file_changed"
+  ])
+  assert.deepEqual(risk?.reasons[0]?.branches, ["main"])
+})
+
+test("keeps clean graph branches as low risk", () => {
+  const feature = branch("feature/a")
+  const graph = buildGraph("main", [feature], [
+    graphEdge("feature/a", "main", "clean", [{ code: "clean_merge" }])
+  ])
+  const [risk] = analyzeGraph(graph, [
+    input("feature/a", cleanSignal(), [], feature)
+  ])
+
+  assert.equal(risk?.score, 0)
+  assert.equal(risk?.status, BranchRiskStatus.Low)
+  assert.deepEqual(reasonCodes(risk), ["clean_merge"])
+})
 
 // confirmed conflict signal이 최상위 risk로 반영되는지 확인
 test("marks confirmed conflict as critical risk", () => {
@@ -183,6 +309,33 @@ function branch(
     name,
     headSha: `${name}-sha`,
     checks
+  }
+}
+
+function graphEdge(
+  leftBranchName: string,
+  rightBranchName: string,
+  status: BranchConflictGraphEdge["status"],
+  reasons: BranchConflictGraphEdge["reasons"]
+): BranchConflictGraphEdge {
+  return {
+    pair: {
+      leftBranchName,
+      rightBranchName
+    },
+    status,
+    reasons
+  }
+}
+
+function cleanSignal(): Pick<
+  GitMergeSignal,
+  "status" | "changedFiles" | "conflictFiles"
+> {
+  return {
+    status: "clean",
+    changedFiles: [],
+    conflictFiles: []
   }
 }
 

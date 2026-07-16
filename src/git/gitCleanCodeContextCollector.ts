@@ -27,16 +27,19 @@ export async function collectCleanOverlapEvidence(
   mergeResult: GitMergeTreePairResult,
   pairIndex: number,
   repositoryPath: string
-): Promise<MergeCodeContextEvidence[]> {
+): Promise<{
+  overlapFiles: string[]
+  evidence: MergeCodeContextEvidence[]
+}> {
   const context = await pairCodeContext(mergeResult, repositoryPath)
   const [leftFiles, rightFiles] = await Promise.all([
     changedFiles(repositoryPath, context.mergeBaseOid, context.leftOid),
     changedFiles(repositoryPath, context.mergeBaseOid, context.rightOid)
   ])
   const rightFileSet = new Set(rightFiles)
-  const commonFiles = leftFiles
-    .filter(filePath => rightFileSet.has(filePath))
-    .sort(compareText)
+  const commonFiles = [...new Set(
+    leftFiles.filter(filePath => rightFileSet.has(filePath))
+  )].sort(compareText)
   const prepared: PreparedCodeContextEvidence[] = []
 
   for (const [fileIndex, filePath] of commonFiles.entries()) {
@@ -135,13 +138,16 @@ export async function collectCleanOverlapEvidence(
     }
   }
 
-  return collectPreparedEvidence(
-    mergeResult,
-    "clean_hunk_overlap",
-    context,
-    prepared,
-    repositoryPath
-  )
+  return {
+    overlapFiles: commonFiles,
+    evidence: await collectPreparedEvidence(
+      mergeResult,
+      "clean_hunk_overlap",
+      context,
+      prepared,
+      repositoryPath
+    )
+  }
 }
 
 // base 좌표와 겹치는 merged hunk의 변경 후 좌표를 선택

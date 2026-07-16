@@ -4,9 +4,14 @@ import { resolve } from "node:path"
 import { promisify } from "node:util"
 import { build as buildBranchComparisonPairs } from "../branches/branchPairBuilder.js"
 import { selectWithReasons as selectBranchesWithReasons } from "../branches/branchSelector.js"
+import { collect as collectGitMergeCodeContextResults } from "../git/gitMergeCodeContextCollector.js"
 import { collect as collectGitMergeTreeResults } from "../git/gitMergeTreeCollector.js"
 import { collectGitMergeSignalFromPairResult } from "../git/gitMergeSignalCollector.js"
-import { analyze as analyzeBranchMergeRisks } from "../risks/riskAnalyzer.js"
+import {
+  buildEdges as buildBranchConflictGraphEdges,
+  buildGraph as buildBranchConflictGraph
+} from "../risks/conflictGraphBuilder.js"
+import { analyzeGraph } from "../risks/riskAnalyzer.js"
 import { build as buildAiPredictionEvidencePayload } from "../ai/evidenceBuilder.js"
 import { createDefaultAiPredictionClient } from "../ai/openAiPredictionClient.js"
 import { predict as predictMergeRisksWithAi } from "../ai/predictionRunner.js"
@@ -132,6 +137,15 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
     repositoryPath: options.repositoryPath,
     remoteName: options.remoteName
   })
+  const codeContextResults = await collectGitMergeCodeContextResults(pairResults, {
+    repositoryPath: options.repositoryPath
+  })
+  const edges = buildBranchConflictGraphEdges(
+    pairs,
+    pairResults,
+    codeContextResults
+  )
+  const graph = buildBranchConflictGraph(options.baseBranch, branches, edges)
   const pairResultByKey = new Map(pairResults.map(result => [
     branchPairKey(result.pair.leftBranchName, result.pair.rightBranchName),
     result
@@ -172,7 +186,7 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
     })
   }
 
-  const risks = analyzeBranchMergeRisks(inputs, {
+  const risks = analyzeGraph(graph, inputs, {
     criticalFilePatterns: options.criticalFilePatterns
   })
   const evidencePayloads = inputs.map((input, index) =>
