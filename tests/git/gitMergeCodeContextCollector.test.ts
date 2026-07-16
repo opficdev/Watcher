@@ -196,6 +196,207 @@ test("bounds pair diagnostics and rejects non-object identifiers", async () => {
   }
 })
 
+test("collects only overlapping clean hunks without repository mutation", async () => {
+  const baseLines = Array.from({ length: 100 }, (_, index) =>
+    `line ${index + 1}`
+  )
+  const overlappingLines = [...baseLines]
+
+  overlappingLines[49] = "shared change"
+
+  const overlapFixture = await createVersionedGitFixture(
+    "src/clean.txt",
+    `${baseLines.join("\n")}\n`,
+    `${overlappingLines.join("\n")}\n`,
+    `${overlappingLines.join("\n")}\n`
+  )
+  const leftLines = [...baseLines]
+  const rightLines = [...baseLines]
+
+  leftLines[9] = "left change"
+  rightLines[89] = "right change"
+
+  const disjointFixture = await createVersionedGitFixture(
+    "src/disjoint.txt",
+    `${baseLines.join("\n")}\n`,
+    `${leftLines.join("\n")}\n`,
+    `${rightLines.join("\n")}\n`
+  )
+
+  try {
+    const overlapMergeResult = await collectFixtureMergeResult(
+      overlapFixture,
+      "clean"
+    )
+    const disjointMergeResult = await collectFixtureMergeResult(
+      disjointFixture,
+      "clean"
+    )
+    const overlapBefore = await repositorySnapshot(overlapFixture.repositoryPath)
+    const disjointBefore = await repositorySnapshot(disjointFixture.repositoryPath)
+    const [overlap] = await collectCodeContext([overlapMergeResult], {
+      repositoryPath: overlapFixture.repositoryPath
+    })
+    const [disjoint] = await collectCodeContext([disjointMergeResult], {
+      repositoryPath: disjointFixture.repositoryPath
+    })
+    const overlapAfter = await repositorySnapshot(overlapFixture.repositoryPath)
+    const disjointAfter = await repositorySnapshot(disjointFixture.repositoryPath)
+
+    assert.deepEqual(overlapAfter, overlapBefore)
+    assert.deepEqual(disjointAfter, disjointBefore)
+    assert.equal(overlap?.evidence.length, 1)
+    assert.equal(overlap?.evidence[0]?.kind, "clean_hunk_overlap")
+    assert.match(overlap?.evidence[0]?.mergedSnippet.content ?? "", /shared change/)
+    assert.equal(disjoint?.errorMessage, undefined)
+    assert.deepEqual(disjoint?.evidence, [])
+  } finally {
+    await overlapFixture.remove()
+    await disjointFixture.remove()
+  }
+})
+
+test("maps a clean overlap through the merged tree after a large insertion", async () => {
+  const baseLines = Array.from({ length: 100 }, (_, index) =>
+    `line ${index + 1}`
+  )
+  const rightLines = [...baseLines]
+  const leftLines = [
+    ...Array.from({ length: 450 }, (_, index) => `inserted ${index + 1}`),
+    ...baseLines
+  ]
+
+  rightLines[79] = "shared change"
+  leftLines[450 + 79] = "shared change"
+
+  const fixture = await createVersionedGitFixture(
+    "src/shifted.txt",
+    `${baseLines.join("\n")}\n`,
+    `${leftLines.join("\n")}\n`,
+    `${rightLines.join("\n")}\n`
+  )
+
+  try {
+    const mergeResult = await collectFixtureMergeResult(fixture, "clean")
+    const [result] = await collectCodeContext([mergeResult], {
+      repositoryPath: fixture.repositoryPath
+    })
+
+    assert.equal(result?.evidence.length, 1)
+    assert.match(result?.evidence[0]?.mergedSnippet.content ?? "", /shared change/)
+  } finally {
+    await fixture.remove()
+  }
+})
+
+test("classifies every deleted clean overlap version without repository mutation", async () => {
+  const fixture = await createVersionedGitFixture(
+    "src/deleted.txt",
+    "base\n",
+    undefined,
+    undefined
+  )
+
+  try {
+    const mergeResult = await collectFixtureMergeResult(fixture, "clean")
+    const before = await repositorySnapshot(fixture.repositoryPath)
+    const [result] = await collectCodeContext([mergeResult], {
+      repositoryPath: fixture.repositoryPath
+    })
+    const after = await repositorySnapshot(fixture.repositoryPath)
+    const evidence = result?.evidence[0]
+
+    assert.deepEqual(after, before)
+    assert.equal(result?.evidence.length, 1)
+    assert.equal(evidence?.baseSnippet.status, "text")
+    assert.equal(evidence?.leftSnippet.status, "deleted")
+    assert.equal(evidence?.rightSnippet.status, "deleted")
+    assert.equal(evidence?.mergedSnippet.status, "deleted")
+    assert.equal(evidence?.leftSnippet.content, undefined)
+    assert.equal(evidence?.rightSnippet.content, undefined)
+    assert.equal(evidence?.mergedSnippet.content, undefined)
+  } finally {
+    await fixture.remove()
+  }
+})
+
+test("classifies binary, deleted, and missing conflict versions without repository mutation", async () => {
+  const fixture = await createEdgeCaseGitFixture()
+
+  try {
+    const mergeResult = await collectFixtureMergeResult(fixture)
+    const before = await repositorySnapshot(fixture.repositoryPath)
+    const [result] = await collectCodeContext([mergeResult], {
+      repositoryPath: fixture.repositoryPath
+    })
+    const after = await repositorySnapshot(fixture.repositoryPath)
+    const evidenceByFile = new Map(result?.evidence.map(evidence => [
+      evidence.filePath,
+      evidence
+    ]))
+    const binary = evidenceByFile.get("binary.bin")
+    const deleted = evidenceByFile.get("delete.txt")
+    const added = evidenceByFile.get("added.txt")
+
+    assert.deepEqual(after, before)
+    assert.equal(binary?.baseSnippet.status, "binary")
+    assert.equal(binary?.leftSnippet.status, "binary")
+    assert.equal(binary?.rightSnippet.status, "binary")
+    assert.equal(binary?.mergedSnippet.status, "binary")
+    assert.equal(binary?.baseSnippet.content, undefined)
+    assert.equal(binary?.leftSnippet.content, undefined)
+    assert.equal(binary?.rightSnippet.content, undefined)
+    assert.equal(binary?.mergedSnippet.content, undefined)
+    assert.equal(deleted?.baseSnippet.status, "text")
+    assert.equal(deleted?.leftSnippet.status, "text")
+    assert.equal(deleted?.rightSnippet.status, "deleted")
+    assert.equal(deleted?.rightSnippet.content, undefined)
+    assert.equal(added?.baseSnippet.status, "missing")
+    assert.equal(added?.leftSnippet.status, "text")
+    assert.equal(added?.rightSnippet.status, "text")
+  } finally {
+    await fixture.remove()
+  }
+})
+
+test("isolates one pair failure and preserves input order", async () => {
+  const fixture = await createGitFixture()
+
+  try {
+    const valid = await collectFixtureMergeResult(fixture)
+    const invalid = {
+      ...valid,
+      pair: {
+        leftBranchName: "invalid/left",
+        rightBranchName: "invalid/right"
+      },
+      leftCommitOid: "f".repeat(41)
+    }
+    const repeated = {
+      ...valid,
+      pair: {
+        leftBranchName: "repeated/left",
+        rightBranchName: "repeated/right"
+      }
+    }
+    const inputs = [valid, invalid, repeated]
+    const before = await repositorySnapshot(fixture.repositoryPath)
+    const results = await collectCodeContext(inputs, {
+      repositoryPath: fixture.repositoryPath
+    })
+    const after = await repositorySnapshot(fixture.repositoryPath)
+
+    assert.deepEqual(after, before)
+    assert.deepEqual(results.map(result => result.pair), inputs.map(result => result.pair))
+    assert.equal(results[0]?.errorMessage, undefined)
+    assert.match(results[1]?.errorMessage ?? "", /Invalid left commit OID/)
+    assert.equal(results[2]?.errorMessage, undefined)
+    assert.equal(results[0]?.evidence.length, results[2]?.evidence.length)
+  } finally {
+    await fixture.remove()
+  }
+})
+
 async function createGitFixture(): Promise<{
   repositoryPath: string
   baseOid: string
@@ -252,8 +453,8 @@ async function writeValueFile(
 async function createVersionedGitFixture(
   filePath: string,
   baseContent: string,
-  leftContent: string,
-  rightContent: string
+  leftContent: string | undefined,
+  rightContent: string | undefined
 ): Promise<{
   repositoryPath: string
   baseOid: string
@@ -275,13 +476,23 @@ async function createVersionedGitFixture(
   const commitOidByBranch = new Map<string, string>()
 
   await git(repositoryPath, ["checkout", "-b", "feature/left", baseOid])
-  await writeFile(absoluteFilePath, leftContent)
-  await git(repositoryPath, ["commit", "-am", "left change"], "2026-07-16T01:00:00Z")
+  if (leftContent === undefined) {
+    await rm(absoluteFilePath)
+  } else {
+    await writeFile(absoluteFilePath, leftContent)
+  }
+  await git(repositoryPath, ["add", "-A"])
+  await git(repositoryPath, ["commit", "-m", "left change"], "2026-07-16T01:00:00Z")
   commitOidByBranch.set("feature/left", await git(repositoryPath, ["rev-parse", "HEAD"]))
 
   await git(repositoryPath, ["checkout", "-b", "feature/right", baseOid])
-  await writeFile(absoluteFilePath, rightContent)
-  await git(repositoryPath, ["commit", "-am", "right change"], "2026-07-16T02:00:00Z")
+  if (rightContent === undefined) {
+    await rm(absoluteFilePath)
+  } else {
+    await writeFile(absoluteFilePath, rightContent)
+  }
+  await git(repositoryPath, ["add", "-A"])
+  await git(repositoryPath, ["commit", "-m", "right change"], "2026-07-16T02:00:00Z")
   commitOidByBranch.set("feature/right", await git(repositoryPath, ["rev-parse", "HEAD"]))
   await git(repositoryPath, ["checkout", "main"])
 
@@ -295,10 +506,59 @@ async function createVersionedGitFixture(
   }
 }
 
-async function collectFixtureMergeResult(fixture: {
+async function createEdgeCaseGitFixture(): Promise<{
   repositoryPath: string
+  baseOid: string
   commitOidByBranch: Map<string, string>
-}): Promise<GitMergeTreePairResult> {
+  remove(): Promise<void>
+}> {
+  const root = await mkdtemp(join(tmpdir(), "watcher-code-context-edge-"))
+  const repositoryPath = join(root, "repository")
+
+  await git(root, ["init", "--initial-branch=main", repositoryPath])
+  await git(repositoryPath, ["config", "user.email", "opfic@example.com"])
+  await git(repositoryPath, ["config", "user.name", "opfic"])
+  await writeFile(join(repositoryPath, "binary.bin"), Buffer.from([0, 1, 2]))
+  await writeFile(join(repositoryPath, "delete.txt"), "base\n")
+  await git(repositoryPath, ["add", "."])
+  await git(repositoryPath, ["commit", "-m", "base"], "2026-07-16T00:00:00Z")
+  const baseOid = await git(repositoryPath, ["rev-parse", "HEAD"])
+  const commitOidByBranch = new Map<string, string>()
+
+  await git(repositoryPath, ["checkout", "-b", "feature/left", baseOid])
+  await writeFile(join(repositoryPath, "binary.bin"), Buffer.from([0, 3, 2]))
+  await writeFile(join(repositoryPath, "delete.txt"), "left\n")
+  await writeFile(join(repositoryPath, "added.txt"), "left added\n")
+  await git(repositoryPath, ["add", "-A"])
+  await git(repositoryPath, ["commit", "-m", "left change"], "2026-07-16T01:00:00Z")
+  commitOidByBranch.set("feature/left", await git(repositoryPath, ["rev-parse", "HEAD"]))
+
+  await git(repositoryPath, ["checkout", "-b", "feature/right", baseOid])
+  await writeFile(join(repositoryPath, "binary.bin"), Buffer.from([0, 4, 2]))
+  await rm(join(repositoryPath, "delete.txt"))
+  await writeFile(join(repositoryPath, "added.txt"), "right added\n")
+  await git(repositoryPath, ["add", "-A"])
+  await git(repositoryPath, ["commit", "-m", "right change"], "2026-07-16T02:00:00Z")
+  commitOidByBranch.set("feature/right", await git(repositoryPath, ["rev-parse", "HEAD"]))
+  await git(repositoryPath, ["checkout", "main"])
+
+  return {
+    repositoryPath,
+    baseOid,
+    commitOidByBranch,
+    async remove(): Promise<void> {
+      await rm(root, { recursive: true, force: true })
+    }
+  }
+}
+
+async function collectFixtureMergeResult(
+  fixture: {
+    repositoryPath: string
+    commitOidByBranch: Map<string, string>
+  },
+  expectedStatus: "clean" | "confirmed_conflict" = "confirmed_conflict"
+): Promise<GitMergeTreePairResult> {
   const round: BranchComparisonRound = {
     roundIndex: 0,
     pairs: [{
@@ -312,7 +572,7 @@ async function collectFixtureMergeResult(fixture: {
   })
 
   assert.ok(result)
-  assert.equal(result.status, "confirmed_conflict")
+  assert.equal(result.status, expectedStatus)
   return result
 }
 
@@ -336,11 +596,12 @@ function conflictResult(
 
 async function repositorySnapshot(repositoryPath: string): Promise<string[]> {
   const head = await git(repositoryPath, ["rev-parse", "HEAD"])
+  const branch = await git(repositoryPath, ["branch", "--show-current"])
   const status = await git(repositoryPath, ["status", "--porcelain=v1"])
   const index = await git(repositoryPath, ["write-tree"])
   const refs = await git(repositoryPath, ["show-ref", "--head"])
 
-  return [head, status, index, refs]
+  return [head, branch, status, index, refs]
 }
 
 async function git(

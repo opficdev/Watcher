@@ -98,3 +98,12 @@ test("keeps a long bounded function range inside the function", () => {
     functionRange: { startLine: 1_000, endLine: 1_500 }
   }), { startLine: 1_101, endLine: 1_500, truncated: true })
 })
+
+test("normalizes a zero line Git insertion range", () => {
+  assert.deepEqual(snippetRangeFor({
+    byteLength: 64 * 1024,
+    lineCount: 1_000,
+    targetRange: { startLine: 0, endLine: 0 },
+    functionRange: { startLine: 0, endLine: 0 }
+  }), { startLine: 1, endLine: 1, truncated: true })
+})

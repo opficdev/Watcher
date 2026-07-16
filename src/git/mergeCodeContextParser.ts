@@ -116,7 +116,7 @@ export function snippetRangeFor(input: {
     endLine: input.targetRange.endLine + FALLBACK_CONTEXT_LINES
   }
   let startLine = Math.max(1, selected.startLine)
-  let endLine = Math.min(lineCount, selected.endLine)
+  let endLine = Math.max(startLine, Math.min(lineCount, selected.endLine))
 
   if (SMALL_FILE_MAX_LINES < endLine - startLine + 1) {
     const center = Math.floor(
@@ -140,6 +140,72 @@ export function snippetRangeFor(input: {
     startLine,
     endLine,
     truncated: true
+  }
+}
+
+// 큰 file fallback 규칙으로 최대 400줄 요청 범위를 구성
+export function boundedContextRange(
+  targetRange: MergeCodeContextLineRange,
+  functionRange?: MergeCodeContextLineRange
+): MergeCodeContextLineRange {
+  const selected = snippetRangeFor({
+    byteLength: Number.MAX_SAFE_INTEGER,
+    lineCount: Number.MAX_SAFE_INTEGER,
+    targetRange,
+    functionRange
+  })
+
+  return {
+    startLine: selected.startLine,
+    endLine: selected.endLine
+  }
+}
+
+// target을 포함하는 가장 좁은 function hunk range를 선택
+export function functionRangeFor(
+  hunks: GitDiffHunk[],
+  side: "old" | "new",
+  targetRange: MergeCodeContextLineRange
+): MergeCodeContextLineRange | undefined {
+  return hunks
+    .map(hunk => side === "old" ? oldRange(hunk) : newRange(hunk))
+    .filter((range): range is MergeCodeContextLineRange =>
+      range !== undefined &&
+      range.startLine <= targetRange.startLine &&
+      targetRange.endLine <= range.endLine
+    )
+    .sort((range, other) =>
+      range.endLine - range.startLine - (other.endLine - other.startLine)
+    )[0]
+}
+
+export function oldRange(
+  hunk: GitDiffHunk | undefined
+): MergeCodeContextLineRange | undefined {
+  if (!hunk) {
+    return undefined
+  }
+
+  return rangeFor(hunk.oldStartLine, hunk.oldLineCount)
+}
+
+export function newRange(
+  hunk: GitDiffHunk | undefined
+): MergeCodeContextLineRange | undefined {
+  if (!hunk) {
+    return undefined
+  }
+
+  return rangeFor(hunk.newStartLine, hunk.newLineCount)
+}
+
+export function unionRange(
+  range: MergeCodeContextLineRange,
+  other: MergeCodeContextLineRange
+): MergeCodeContextLineRange {
+  return {
+    startLine: Math.min(range.startLine, other.startLine),
+    endLine: Math.max(range.endLine, other.endLine)
   }
 }
 
