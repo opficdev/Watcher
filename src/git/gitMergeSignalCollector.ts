@@ -1,10 +1,13 @@
 import { execFile } from "node:child_process"
-import { mkdtemp, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import { promisify } from "node:util"
+import { build as buildBranchComparisonPairs } from "../branches/branchPairBuilder.js"
 import type { BranchContext } from "../branches/types.js"
-import type { GitMergeSignal, GitMergeSignalCollectionOptions } from "./types.js"
+import { collect as collectGitMergeTreeResults } from "./gitMergeTreeCollector.js"
+import type {
+  GitMergeSignal,
+  GitMergeSignalCollectionOptions,
+  GitMergeTreePairResult
+} from "./types.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -13,6 +16,41 @@ export async function collectGitMergeSignal(
   branch: BranchContext,
   options: GitMergeSignalCollectionOptions
 ): Promise<GitMergeSignal> {
+  const pair = buildBranchComparisonPairs(branch.baseBranch, [branch])[0]
+
+  if (!pair) {
+    return failedSignal(branch, "branch comparison pair is missing")
+  }
+
+  const results = await collectGitMergeTreeResults([pair], {
+    repositoryPath: options.repositoryPath,
+    remoteName: options.remoteName
+  })
+
+  return collectGitMergeSignalFromPairResult(branch, results[0], options)
+}
+
+// 미리 수집한 base 포함 pair 결과를 기존 branch 단위 GitMergeSignal로 변환
+export async function collectGitMergeSignalFromPairResult(
+  branch: BranchContext,
+  pairResult: GitMergeTreePairResult | undefined,
+  options: GitMergeSignalCollectionOptions
+): Promise<GitMergeSignal> {
+  if (!pairResult) {
+    return failedSignal(branch, "merge-tree result is missing for branch pair")
+  }
+
+  if (!matches(branch, pairResult)) {
+    return failedSignal(branch, "merge-tree result does not match branch pair")
+  }
+
+  if (pairResult.failureStage === "preparation") {
+    return failedSignal(
+      branch,
+      pairResult.errorMessage ?? "merge-tree preparation failed"
+    )
+  }
+
   const remote = options.remoteName ?? "origin"
   const baseRef = `refs/remotes/${remote}/${branch.baseBranch}`
   const headRef = `refs/remotes/${remote}/${branch.name}`
@@ -20,10 +58,6 @@ export async function collectGitMergeSignal(
   let changedFiles: string[] = []
 
   try {
-    // remote tracking ref 기준으로 base/head를 맞춘 뒤 merge signal을 계산
-    await fetchBranch(options.repositoryPath, remote, branch.baseBranch)
-    await fetchBranch(options.repositoryPath, remote, branch.name)
-
     mergeBaseSha = await gitOutput(options.repositoryPath, [
       "merge-base",
       baseRef,
@@ -36,14 +70,17 @@ export async function collectGitMergeSignal(
       headRef
     ])
 
-    return await runVirtualMerge({
-      branch,
-      options,
-      baseRef,
-      headRef,
+    return {
+      status: pairResult.status,
+      baseBranch: branch.baseBranch,
+      branchName: branch.name,
       mergeBaseSha,
-      changedFiles
-    })
+      changedFiles,
+      conflictFiles: pairResult.conflictFiles,
+      ...(pairResult.errorMessage
+        ? { errorMessage: pairResult.errorMessage }
+        : {})
+    }
   } catch (error) {
     return {
       status: "merge_check_failed",
@@ -52,103 +89,35 @@ export async function collectGitMergeSignal(
       mergeBaseSha,
       changedFiles,
       conflictFiles: [],
-      errorMessage: formatGitError(error)
+      errorMessage: pairResult.status === "merge_check_failed"
+        ? pairResult.errorMessage ?? formatGitError(error)
+        : formatGitError(error)
     }
   }
 }
 
-// 임시 worktree에서 merge를 시도해 repository 변경 없이 충돌 여부를 확인
-async function runVirtualMerge(input: {
-  branch: BranchContext
-  options: GitMergeSignalCollectionOptions
-  baseRef: string
-  headRef: string
-  mergeBaseSha: string
-  changedFiles: string[]
-}): Promise<GitMergeSignal> {
-  // 실제 repository 상태를 더럽히지 않도록 임시 worktree에서 virtual merge 수행
-  const root = await mkdtemp(join(input.options.worktreeRoot ?? tmpdir(), "watcher-merge-"))
-  const worktree = join(root, "worktree")
-
-  try {
-    await gitOutput(input.options.repositoryPath, [
-      "worktree",
-      "add",
-      "--detach",
-      worktree,
-      input.baseRef
-    ])
-
-    try {
-      const merge = await gitResult(worktree, [
-        "merge",
-        "--no-commit",
-        "--no-ff",
-        input.headRef
-      ])
-
-      if (merge.exitCode === 0) {
-        return {
-          status: "clean",
-          baseBranch: input.branch.baseBranch,
-          branchName: input.branch.name,
-          mergeBaseSha: input.mergeBaseSha,
-          changedFiles: input.changedFiles,
-          conflictFiles: []
-        }
-      }
-
-      const conflictFiles = await gitLines(worktree, [
-        "diff",
-        "--name-only",
-        "--diff-filter=U"
-      ])
-
-      if (0 < conflictFiles.length) {
-        return {
-          status: "confirmed_conflict",
-          baseBranch: input.branch.baseBranch,
-          branchName: input.branch.name,
-          mergeBaseSha: input.mergeBaseSha,
-          changedFiles: input.changedFiles,
-          conflictFiles
-        }
-      }
-
-      return {
-        status: "merge_check_failed",
-        baseBranch: input.branch.baseBranch,
-        branchName: input.branch.name,
-        mergeBaseSha: input.mergeBaseSha,
-        changedFiles: input.changedFiles,
-        conflictFiles: [],
-        errorMessage: formatGitError(merge.stderr)
-      }
-    } finally {
-      await gitResult(input.options.repositoryPath, [
-        "worktree",
-        "remove",
-        "--force",
-        worktree
-      ])
-    }
-  } finally {
-    await rm(root, { recursive: true, force: true })
-  }
-}
-
-// 지정 branch의 최신 remote ref를 로컬 remote tracking ref로 갱신
-async function fetchBranch(
-  repositoryPath: string,
-  remote: string,
-  branchName: string
-): Promise<void> {
-  await gitOutput(repositoryPath, [
-    "fetch",
-    "--quiet",
-    remote,
-    `+refs/heads/${branchName}:refs/remotes/${remote}/${branchName}`
+// pair 결과가 기존 base와 branch 관계를 나타내는지 확인
+function matches(branch: BranchContext, result: GitMergeTreePairResult): boolean {
+  const names = new Set([
+    result.pair.leftBranchName,
+    result.pair.rightBranchName
   ])
+
+  return names.size === 2 &&
+    names.has(branch.baseBranch) &&
+    names.has(branch.name)
+}
+
+// pair를 구성하거나 찾지 못한 branch를 기존 실패 signal로 표현
+function failedSignal(branch: BranchContext, errorMessage: string): GitMergeSignal {
+  return {
+    status: "merge_check_failed",
+    baseBranch: branch.baseBranch,
+    branchName: branch.name,
+    changedFiles: [],
+    conflictFiles: [],
+    errorMessage
+  }
 }
 
 // git stdout을 비어 있지 않은 line 목록으로 변환

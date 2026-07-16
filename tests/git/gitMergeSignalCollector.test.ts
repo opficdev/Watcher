@@ -6,6 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { collectGitMergeSignal, type BranchContext } from "../../src/index.js"
+import { collectGitMergeSignalFromPairResult } from "../../src/git/gitMergeSignalCollector.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -63,6 +64,73 @@ test("collects merge check failure signal", async () => {
     assert.deepEqual(signal.conflictFiles, [])
     assert.match(signal.errorMessage ?? "", /feature\/missing/)
     assert.deepEqual(await readdir(fixture.worktreeRoot), [])
+  } finally {
+    await fixture.remove()
+  }
+})
+
+// base branch가 조합의 오른쪽에 있어도 기존 branch signal로 변환하는지 확인
+test("converts a base pair result independent of pair direction", async () => {
+  const fixture = await createGitFixture()
+
+  try {
+    const signal = await collectGitMergeSignalFromPairResult(
+      branch("main", "feature/conflict"),
+      {
+        pair: {
+          leftBranchName: "feature/conflict",
+          rightBranchName: "main"
+        },
+        status: "confirmed_conflict",
+        mergedTreeOid: "1".repeat(40),
+        conflictFiles: ["shared.txt"],
+        conflicts: [{
+          paths: ["shared.txt"],
+          type: "CONFLICT (contents)"
+        }]
+      },
+      {
+        repositoryPath: fixture.repositoryPath,
+        worktreeRoot: fixture.worktreeRoot
+      }
+    )
+
+    assert.equal(signal.status, "confirmed_conflict")
+    assert.deepEqual(signal.changedFiles, ["shared.txt"])
+    assert.deepEqual(signal.conflictFiles, ["shared.txt"])
+    assert.deepEqual(await readdir(fixture.worktreeRoot), [])
+  } finally {
+    await fixture.remove()
+  }
+})
+
+// fetch와 ref 고정 실패에서는 오래된 ref의 변경 정보를 다시 사용하지 않는지 확인
+test("keeps changed files empty after merge-tree preparation failure", async () => {
+  const fixture = await createGitFixture()
+
+  try {
+    const signal = await collectGitMergeSignalFromPairResult(
+      branch("main", "feature/conflict"),
+      {
+        pair: {
+          leftBranchName: "feature/conflict",
+          rightBranchName: "main"
+        },
+        status: "merge_check_failed",
+        conflictFiles: [],
+        conflicts: [],
+        errorMessage: "git fetch failed for remote origin",
+        failureStage: "preparation"
+      },
+      {
+        repositoryPath: fixture.repositoryPath
+      }
+    )
+
+    assert.equal(signal.status, "merge_check_failed")
+    assert.equal(signal.mergeBaseSha, undefined)
+    assert.deepEqual(signal.changedFiles, [])
+    assert.deepEqual(signal.conflictFiles, [])
   } finally {
     await fixture.remove()
   }
