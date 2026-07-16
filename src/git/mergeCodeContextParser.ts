@@ -41,10 +41,10 @@ export function overlapRegions(
   const regions: MergeCodeContextRegion[] = []
 
   for (const left of leftHunks) {
-    const leftBase = oldRangeFor(left)
+    const leftBase = rangeFor(left.oldStartLine, left.oldLineCount)
 
     for (const right of rightHunks) {
-      const rightBase = oldRangeFor(right)
+      const rightBase = rangeFor(right.oldStartLine, right.oldLineCount)
       const startLine = Math.max(leftBase.startLine, rightBase.startLine)
       const endLine = Math.min(leftBase.endLine, rightBase.endLine)
 
@@ -55,8 +55,8 @@ export function overlapRegions(
       regions.push({
         filePath,
         baseRange: { startLine, endLine },
-        leftRange: newRangeFor(left),
-        rightRange: newRangeFor(right)
+        leftRange: rangeFor(left.newStartLine, left.newLineCount),
+        rightRange: rangeFor(right.newStartLine, right.newLineCount)
       })
     }
   }
@@ -141,14 +141,6 @@ export function snippetRangeFor(input: {
     endLine,
     truncated: true
   }
-}
-
-function oldRangeFor(hunk: GitDiffHunk): MergeCodeContextLineRange {
-  return rangeFor(hunk.oldStartLine, hunk.oldLineCount)
-}
-
-function newRangeFor(hunk: GitDiffHunk): MergeCodeContextLineRange {
-  return rangeFor(hunk.newStartLine, hunk.newLineCount)
 }
 
 function rangeFor(startLine: number, lineCount: number): MergeCodeContextLineRange {
