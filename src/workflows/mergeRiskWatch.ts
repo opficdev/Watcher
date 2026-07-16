@@ -4,7 +4,8 @@ import { resolve } from "node:path"
 import { promisify } from "node:util"
 import { build as buildBranchComparisonPairs } from "../branches/branchPairBuilder.js"
 import { selectWithReasons as selectBranchesWithReasons } from "../branches/branchSelector.js"
-import { collectGitMergeSignal } from "../git/gitMergeSignalCollector.js"
+import { collect as collectGitMergeTreeResults } from "../git/gitMergeTreeCollector.js"
+import { collectGitMergeSignalFromPairResult } from "../git/gitMergeSignalCollector.js"
 import { analyze as analyzeBranchMergeRisks } from "../risks/riskAnalyzer.js"
 import { build as buildAiPredictionEvidencePayload } from "../ai/evidenceBuilder.js"
 import { createDefaultAiPredictionClient } from "../ai/openAiPredictionClient.js"
@@ -127,6 +128,14 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
   }, generatedAt)
   const branches = branchSelection.selected
   const pairs = buildBranchComparisonPairs(options.baseBranch, branches)
+  const pairResults = await collectGitMergeTreeResults(pairs, {
+    repositoryPath: options.repositoryPath,
+    remoteName: options.remoteName
+  })
+  const pairResultByKey = new Map(pairResults.map(result => [
+    branchPairKey(result.pair.leftBranchName, result.pair.rightBranchName),
+    result
+  ]))
   const inputs: BranchRiskAnalysisInput[] = []
 
   await debugArtifactWriter?.writeJson("branch-selection.json", {
@@ -139,7 +148,11 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
   })
 
   for (const branch of branches) {
-    const gitSignal = await collectGitMergeSignal(branch, {
+    const pairResult = pairResultByKey.get(branchPairKey(
+      options.baseBranch,
+      branch.name
+    ))
+    const gitSignal = await collectGitMergeSignalFromPairResult(branch, pairResult, {
       repositoryPath: options.repositoryPath,
       remoteName: options.remoteName
     })
@@ -221,6 +234,13 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
   if (!result.ok) {
     throw new Error(result.errorMessage)
   }
+}
+
+// 방향과 무관하게 base 포함 pair 결과를 찾을 식별자를 구성
+function branchPairKey(branchName: string, otherBranchName: string): string {
+  return branchName < otherBranchName
+    ? `${branchName}\u0000${otherBranchName}`
+    : `${otherBranchName}\u0000${branchName}`
 }
 
 // AI 대상 선택 artifact에 기록할 branch 식별 정보만 추출

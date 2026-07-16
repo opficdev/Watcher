@@ -203,10 +203,75 @@ test("writes merge risk debug artifacts", async () => {
       leftBranchName: "feature/critical-peer",
       rightBranchName: "main"
     }])
+    assert.equal(await git(fixture.repositoryPath, ["status", "--porcelain=v1"]), "")
+    assert.equal(
+      (await git(fixture.repositoryPath, ["worktree", "list", "--porcelain"]))
+        .split("\n")
+        .filter(line => line.startsWith("worktree "))
+        .length,
+      1
+    )
     assert.doesNotMatch(combinedArtifact, /openai-secret/)
     assert.doesNotMatch(combinedArtifact, /webhook-secret/)
     assert.doesNotMatch(combinedArtifact, /feature critical content/)
     assert.doesNotMatch(combinedArtifact, /peer critical content/)
+  } finally {
+    globalThis.fetch = originalFetch
+    restoreEnv("OPENAI_API_KEY", originalOpenAiApiKey)
+    restoreEnv("DISCORD_WEBHOOK_URL", originalDiscordWebhookUrl)
+    await fixture.remove()
+  }
+})
+
+// fetch 실패 시 오래된 remote ref에서 changed file과 hunk를 다시 만들지 않는지 확인
+test("keeps deterministic evidence empty after pair fetch failure", async () => {
+  const fixture = await createWorkflowGitFixture()
+  const originalOpenAiApiKey = process.env.OPENAI_API_KEY
+  const originalDiscordWebhookUrl = process.env.DISCORD_WEBHOOK_URL
+  const originalFetch = globalThis.fetch
+
+  process.env.OPENAI_API_KEY = "openai-secret"
+  process.env.DISCORD_WEBHOOK_URL = "https://discord.test/webhook-secret"
+  globalThis.fetch = async input => {
+    assert.equal(new Request(input).url, "https://discord.test/webhook-secret")
+    return new Response(null, { status: 204 })
+  }
+
+  try {
+    await git(fixture.repositoryPath, [
+      "remote",
+      "set-url",
+      "origin",
+      join(fixture.repositoryPath, "missing-remote.git")
+    ])
+    await run({
+      repository: "opficdev/Watcher",
+      repositoryPath: fixture.repositoryPath,
+      baseBranch: "main",
+      criticalFilePatterns: [],
+      remoteName: "origin",
+      githubApiUrl: "https://api.github.test",
+      debugArtifactDir: fixture.debugArtifactDir
+    })
+
+    const artifact = await readJson<{
+      inputs?: Array<{
+        gitSignal?: {
+          status?: string
+          mergeBaseSha?: string
+          changedFiles?: string[]
+        }
+        changedHunks?: unknown[]
+      }>
+    }>(fixture.debugArtifactDir, "deterministic-evidence.json")
+
+    assert.equal(artifact.inputs?.length, 2)
+    assert.equal(artifact.inputs?.every(input =>
+      input.gitSignal?.status === "merge_check_failed" &&
+      input.gitSignal.mergeBaseSha === undefined &&
+      input.gitSignal.changedFiles?.length === 0 &&
+      input.changedHunks?.length === 0
+    ), true)
   } finally {
     globalThis.fetch = originalFetch
     restoreEnv("OPENAI_API_KEY", originalOpenAiApiKey)
