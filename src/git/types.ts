@@ -84,6 +84,7 @@ export type MergeCodeContextEvidence = {
 
 export type GitMergeCodeContextPairResult = {
   pair: BranchComparisonPair
+  overlapFiles: string[]
   evidence: MergeCodeContextEvidence[]
   errorMessage?: string
 }

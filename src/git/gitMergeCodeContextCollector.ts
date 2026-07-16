@@ -18,29 +18,41 @@ export async function collect(
     if (mergeResult.status === "merge_check_failed") {
       results.push({
         pair: mergeResult.pair,
+        overlapFiles: [],
         evidence: []
       })
       continue
     }
 
     try {
+      if (mergeResult.status === "confirmed_conflict") {
+        results.push({
+          pair: mergeResult.pair,
+          overlapFiles: sortedUnique(mergeResult.conflictFiles),
+          evidence: await collectConflictEvidence(
+            mergeResult,
+            pairIndex,
+            options.repositoryPath
+          )
+        })
+        continue
+      }
+
+      const collection = await collectCleanOverlapEvidence(
+        mergeResult,
+        pairIndex,
+        options.repositoryPath
+      )
+
       results.push({
         pair: mergeResult.pair,
-        evidence: mergeResult.status === "confirmed_conflict"
-          ? await collectConflictEvidence(
-            mergeResult,
-            pairIndex,
-            options.repositoryPath
-          )
-          : await collectCleanOverlapEvidence(
-            mergeResult,
-            pairIndex,
-            options.repositoryPath
-          )
+        overlapFiles: collection.overlapFiles,
+        evidence: collection.evidence
       })
     } catch (error) {
       results.push({
         pair: mergeResult.pair,
+        overlapFiles: [],
         evidence: [],
         errorMessage: diagnosticFor(error)
       })
@@ -48,6 +60,18 @@ export async function collect(
   }
 
   return results
+}
+
+function sortedUnique(values: string[]): string[] {
+  return [...new Set(values)].sort(compareText)
+}
+
+function compareText(text: string, other: string): number {
+  if (text === other) {
+    return 0
+  }
+
+  return text < other ? -1 : 1
 }
 
 function diagnosticFor(error: unknown): string {
