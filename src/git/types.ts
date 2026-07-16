@@ -13,6 +13,8 @@ export type GitMergeTreeConflict = {
   type: string
 }
 
+export type GitMergeTreeFailureStage = "preparation" | "merge"
+
 export type GitMergeTreePairResult = {
   pair: BranchComparisonPair
   status: GitMergeSignalStatus
@@ -20,6 +22,7 @@ export type GitMergeTreePairResult = {
   conflictFiles: string[]
   conflicts: GitMergeTreeConflict[]
   errorMessage?: string
+  failureStage?: GitMergeTreeFailureStage
 }
 
 export type GitMergeTreeRoundCollectionOptions = {
@@ -32,6 +35,24 @@ export type GitMergeTreeRoundCollector = (
   round: BranchComparisonRound,
   options: GitMergeTreeRoundCollectionOptions
 ) => Promise<GitMergeTreePairResult[]>
+
+export type GitMergeTreeCollectionOptions = {
+  repositoryPath: string
+  remoteName?: string
+  stderrLimit?: number
+}
+
+export type GitMergeTreeCollectorDependencies = {
+  fetchRemoteBranches(repositoryPath: string, remote: string): Promise<void>
+  resolveCommitOids(
+    repositoryPath: string,
+    remote: string,
+    branchNames: string[]
+  ): Promise<ReadonlyMap<string, string>>
+  supportsMergeTreeStdin(repositoryPath: string): Promise<boolean>
+  collectRound: GitMergeTreeRoundCollector
+  availableParallelism(): number
+}
 
 export type GitMergeSignal = {
   status: GitMergeSignalStatus
