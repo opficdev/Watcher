@@ -47,6 +47,11 @@ export type BranchComparisonPair = {
   rightBranchName: string
 }
 
+export type BranchComparisonRound = {
+  roundIndex: number
+  pairs: BranchComparisonPair[]
+}
+
 export type BranchContext = {
   baseBranch: string
   name: string

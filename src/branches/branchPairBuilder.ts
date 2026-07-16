@@ -33,7 +33,7 @@ export function build(
 }
 
 // 실행 환경에 무관한 문자열 비교로 branch 이름 순서를 결정
-function compareBranchNames(branchName: string, otherBranchName: string): number {
+export function compareBranchNames(branchName: string, otherBranchName: string): number {
   if (branchName < otherBranchName) {
     return -1
   }
