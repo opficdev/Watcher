@@ -50,6 +50,7 @@ export class GitObjectSnippetStream implements GitObjectContentConsumer {
 
 // 작은 object만 전체 보관하고 큰 object는 선택 line만 streaming 보관
 class GitObjectContentCollector {
+  private readonly byteLength: number
   private readonly storesWholeContent: boolean
   private readonly contentChunks: Buffer[] = []
   private readonly decoder = new TextDecoder("utf-8", { fatal: true })
@@ -60,11 +61,14 @@ class GitObjectContentCollector {
   private binary = false
 
   constructor(private readonly check: GitObjectCheck) {
-    if (check.byteLength === undefined) {
+    const byteLength = check.byteLength
+
+    if (byteLength === undefined) {
       throw new Error("Missing Git object byte length")
     }
 
-    this.storesWholeContent = check.byteLength <= SNIPPET_MAX_BYTES
+    this.byteLength = byteLength
+    this.storesWholeContent = byteLength <= SNIPPET_MAX_BYTES
     this.lineCollectors = check.group.requests.map(request =>
       new GitObjectLineRangeCollector(request)
     )
@@ -113,8 +117,7 @@ class GitObjectContentCollector {
       ])
     }
 
-    const byteLength = this.check.byteLength ?? 0
-    const lineCount = byteLength === 0
+    const lineCount = this.byteLength === 0
       ? 1
       : this.endedWithNewline
         ? Math.max(1, this.currentLine - 1)
