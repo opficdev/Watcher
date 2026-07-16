@@ -87,3 +87,16 @@ export type BranchConflictGraphEdge = {
   reasons: BranchConflictGraphEdgeReason[]
   errorMessage?: string
 }
+
+export type BranchConflictGraphNode = {
+  branchName: string
+  confirmedConflictCount: number
+  potentialOverlapCount: number
+  relatedBranchNames: string[]
+}
+
+export type BranchConflictGraph = {
+  baseBranch: string
+  nodes: BranchConflictGraphNode[]
+  edges: BranchConflictGraphEdge[]
+}

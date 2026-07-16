@@ -1,12 +1,17 @@
 import { compareBranchNames } from "../branches/branchPairBuilder.js"
-import type { BranchComparisonPair } from "../branches/types.js"
+import type {
+  BranchComparisonPair,
+  BranchContext
+} from "../branches/types.js"
 import type {
   GitMergeCodeContextPairResult,
   GitMergeTreePairResult
 } from "../git/types.js"
 import type {
+  BranchConflictGraph,
   BranchConflictGraphEdge,
-  BranchConflictGraphEdgeReason
+  BranchConflictGraphEdgeReason,
+  BranchConflictGraphNode
 } from "./types.js"
 
 // 입력 branch 조합만 중복 없이 정규화해 충돌 관계 edge로 분류
@@ -23,6 +28,108 @@ export function buildEdges(
     mergeResultByPair.get(keyFor(pair)),
     codeContextResultByPair.get(keyFor(pair))
   ))
+}
+
+// base branch와 활성 branch의 위험 관계를 양방향 node 집계로 구성
+export function buildGraph(
+  baseBranch: string,
+  branches: BranchContext[],
+  edges: BranchConflictGraphEdge[]
+): BranchConflictGraph {
+  const branchNames = sortedUnique([
+    baseBranch,
+    ...branches.map(branch => branch.name)
+  ])
+  const branchNameSet = new Set(branchNames)
+  const graphEdges = normalizedGraphEdges(edges, branchNameSet)
+
+  return {
+    baseBranch,
+    nodes: branchNames.map(branchName => nodeFor(branchName, graphEdges)),
+    edges: graphEdges
+  }
+}
+
+function nodeFor(
+  branchName: string,
+  edges: BranchConflictGraphEdge[]
+): BranchConflictGraphNode {
+  let confirmedConflictCount = 0
+  let potentialOverlapCount = 0
+  const relatedBranchNames = new Set<string>()
+
+  for (const edge of edges) {
+    const relatedBranchName = relatedBranchNameFor(edge.pair, branchName)
+
+    if (!relatedBranchName) {
+      continue
+    }
+
+    if (edge.status === "confirmed_conflict") {
+      confirmedConflictCount += 1
+      relatedBranchNames.add(relatedBranchName)
+      continue
+    }
+
+    if (edge.status === "potential_overlap") {
+      potentialOverlapCount += 1
+      relatedBranchNames.add(relatedBranchName)
+    }
+  }
+
+  return {
+    branchName,
+    confirmedConflictCount,
+    potentialOverlapCount,
+    relatedBranchNames: sortedUnique([...relatedBranchNames])
+  }
+}
+
+function normalizedGraphEdges(
+  edges: BranchConflictGraphEdge[],
+  branchNames: ReadonlySet<string>
+): BranchConflictGraphEdge[] {
+  const edgeByPair = new Map<string, BranchConflictGraphEdge>()
+
+  for (const edge of edges) {
+    const pair = normalizedPair(edge.pair)
+
+    if (
+      pair.leftBranchName === pair.rightBranchName ||
+      !branchNames.has(pair.leftBranchName) ||
+      !branchNames.has(pair.rightBranchName)
+    ) {
+      continue
+    }
+
+    const key = keyFor(pair)
+
+    if (!edgeByPair.has(key)) {
+      edgeByPair.set(key, {
+        ...edge,
+        pair
+      })
+    }
+  }
+
+  return [...edgeByPair.values()].sort((edge, other) =>
+    comparePairs(edge.pair, other.pair)
+  )
+}
+
+function relatedBranchNameFor(
+  pair: BranchComparisonPair,
+  branchName: string
+): string | undefined {
+  if (pair.leftBranchName === branchName) {
+    return pair.rightBranchName
+  }
+
+  if (pair.rightBranchName === branchName) {
+    return pair.leftBranchName
+  }
+
+  return undefined
 }
 
 function edgeFor(

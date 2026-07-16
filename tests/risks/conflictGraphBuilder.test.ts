@@ -1,12 +1,19 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { buildEdges } from "../../src/risks/conflictGraphBuilder.js"
-import type { BranchComparisonPair } from "../../src/branches/types.js"
+import {
+  buildEdges,
+  buildGraph
+} from "../../src/risks/conflictGraphBuilder.js"
+import type {
+  BranchComparisonPair,
+  BranchContext
+} from "../../src/branches/types.js"
 import type {
   GitMergeCodeContextPairResult,
   GitMergeTreePairResult,
   MergeCodeContextEvidence
 } from "../../src/git/types.js"
+import type { BranchConflictGraphEdge } from "../../src/risks/types.js"
 
 test("normalizes branch pairs, removes duplicates, and ignores unrelated results", () => {
   const pair = branchPair("feature/z", "feature/a")
@@ -137,6 +144,60 @@ test("classifies failed or missing evidence as error", () => {
   }])
 })
 
+test("aggregates risky relationships and removes reversed edge duplicates", () => {
+  const conflictPair = branchPair("feature/a", "feature/b")
+  const overlapPair = branchPair("feature/a", "main")
+  const errorPair = branchPair("feature/b", "main")
+  const graph = buildGraph("main", [
+    branchContext("feature/b"),
+    branchContext("feature/a"),
+    branchContext("feature/a")
+  ], [
+    graphEdge(errorPair, "error", [{ code: "merge_check_failed" }]),
+    graphEdge(overlapPair, "potential_overlap", [{
+      code: "same_file_overlap",
+      files: ["src/shared.ts"]
+    }]),
+    graphEdge(conflictPair, "confirmed_conflict", [{
+      code: "confirmed_conflict",
+      files: ["src/conflict.ts"]
+    }]),
+    graphEdge(
+      branchPair("feature/b", "feature/a"),
+      "clean",
+      [{ code: "clean_merge" }]
+    ),
+    graphEdge(
+      branchPair("feature/unused", "main"),
+      "confirmed_conflict",
+      [{ code: "confirmed_conflict" }]
+    )
+  ])
+
+  assert.equal(graph.baseBranch, "main")
+  assert.deepEqual(graph.edges.map(edge => edge.pair), [
+    conflictPair,
+    overlapPair,
+    errorPair
+  ])
+  assert.deepEqual(graph.nodes, [{
+    branchName: "feature/a",
+    confirmedConflictCount: 1,
+    potentialOverlapCount: 1,
+    relatedBranchNames: ["feature/b", "main"]
+  }, {
+    branchName: "feature/b",
+    confirmedConflictCount: 1,
+    potentialOverlapCount: 0,
+    relatedBranchNames: ["feature/a"]
+  }, {
+    branchName: "main",
+    confirmedConflictCount: 0,
+    potentialOverlapCount: 1,
+    relatedBranchNames: ["feature/a"]
+  }])
+})
+
 function branchPair(
   leftBranchName: string,
   rightBranchName: string
@@ -144,6 +205,27 @@ function branchPair(
   return {
     leftBranchName,
     rightBranchName
+  }
+}
+
+function branchContext(name: string): BranchContext {
+  return {
+    baseBranch: "main",
+    name,
+    headSha: `${name}-sha`,
+    checks: []
+  }
+}
+
+function graphEdge(
+  pair: BranchComparisonPair,
+  status: BranchConflictGraphEdge["status"],
+  reasons: BranchConflictGraphEdge["reasons"]
+): BranchConflictGraphEdge {
+  return {
+    pair,
+    status,
+    reasons
   }
 }
 

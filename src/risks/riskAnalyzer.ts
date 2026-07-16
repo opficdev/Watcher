@@ -1,6 +1,9 @@
 import type { BranchCheckMetadata } from "../branches/types.js"
 import { BranchRiskStatus } from "./types.js"
 import type {
+  BranchConflictGraph,
+  BranchConflictGraphEdge,
+  BranchConflictGraphEdgeReasonCode,
   BranchChangedHunk,
   BranchRisk,
   BranchRiskAnalysisInput,
@@ -63,6 +66,186 @@ export function analyze(
       reasons
     }
   })
+}
+
+// 충돌 관계 graph를 기존 branch risk 결과로 호환 변환
+export function analyzeGraph(
+  graph: BranchConflictGraph,
+  inputs: BranchRiskAnalysisInput[],
+  options: BranchRiskAnalysisOptions = {}
+): BranchRisk[] {
+  const criticalRegexes = options.criticalFilePatterns?.map(wildcardToRegExp) ?? []
+
+  return inputs.map(input => {
+    const reasons = buildGraphReasons(graph, input, criticalRegexes)
+    const score = Math.min(
+      MAX_SCORE,
+      reasons.reduce((total, reason) => total + reason.scoreImpact, 0)
+    )
+
+    return {
+      branchName: input.branch.name,
+      baseBranch: input.branch.baseBranch,
+      score,
+      status: statusForScore(score),
+      reasons
+    }
+  })
+}
+
+function buildGraphReasons(
+  graph: BranchConflictGraph,
+  input: BranchRiskAnalysisInput,
+  criticalRegexes: RegExp[]
+): BranchRiskReason[] {
+  const edges = graph.edges.filter(edge =>
+    edge.pair.leftBranchName === input.branch.name ||
+    edge.pair.rightBranchName === input.branch.name
+  )
+  const conflictEdges = edges.filter(edge =>
+    edge.status === "confirmed_conflict"
+  )
+
+  if (conflictEdges.length) {
+    const evidence = graphReasonEvidence(
+      conflictEdges,
+      input.branch.name,
+      "confirmed_conflict"
+    )
+
+    return [{
+      code: "confirmed_conflict",
+      message: "branch 조합의 virtual merge에서 conflict가 확인됨",
+      scoreImpact: SCORE.confirmedConflict,
+      files: evidence.files,
+      branches: evidence.branches
+    }]
+  }
+
+  const reasons: BranchRiskReason[] = []
+  const errorEdges = edges.filter(edge => edge.status === "error")
+
+  if (errorEdges.length) {
+    reasons.push({
+      code: "merge_check_failed",
+      message: "branch 조합 확인에 실패함",
+      scoreImpact: SCORE.mergeCheckFailed,
+      branches: relatedBranches(errorEdges, input.branch.name)
+    })
+  }
+
+  appendGraphOverlapReason(
+    reasons,
+    edges,
+    input.branch.name,
+    "same_hunk_overlap",
+    "다른 branch와 같은 hunk를 수정함",
+    SCORE.sameHunkOverlap
+  )
+  appendGraphOverlapReason(
+    reasons,
+    edges,
+    input.branch.name,
+    "same_file_overlap",
+    "다른 branch와 같은 파일을 수정함",
+    SCORE.sameFileOverlap
+  )
+
+  const failedChecks = input.branch.checks.filter(isFailedCheck)
+  if (failedChecks.length) {
+    reasons.push({
+      code: "failed_check",
+      message: "실패한 check metadata가 존재함",
+      scoreImpact: SCORE.failedCheck,
+      checks: failedChecks.map(check => check.name).sort()
+    })
+  }
+
+  const criticalFiles = sortedUnique(input.gitSignal.changedFiles
+    .filter(file => criticalRegexes.some(regex => regex.test(file))))
+  if (criticalFiles.length) {
+    reasons.push({
+      code: "critical_file_changed",
+      message: "critical file pattern에 해당하는 파일을 수정함",
+      scoreImpact: SCORE.criticalFileChanged,
+      files: criticalFiles
+    })
+  }
+
+  if (!reasons.length) {
+    reasons.push({
+      code: "clean_merge",
+      message: "virtual merge에서 conflict가 확인되지 않음",
+      scoreImpact: 0
+    })
+  }
+
+  return reasons
+}
+
+function appendGraphOverlapReason(
+  reasons: BranchRiskReason[],
+  edges: BranchConflictGraphEdge[],
+  branchName: string,
+  code: "same_hunk_overlap" | "same_file_overlap",
+  message: string,
+  scoreImpact: number
+): void {
+  const evidence = graphReasonEvidence(edges, branchName, code)
+
+  if (!evidence.branches.length) {
+    return
+  }
+
+  reasons.push({
+    code,
+    message,
+    scoreImpact,
+    files: evidence.files,
+    branches: evidence.branches
+  })
+}
+
+function graphReasonEvidence(
+  edges: BranchConflictGraphEdge[],
+  branchName: string,
+  code: BranchConflictGraphEdgeReasonCode
+): { files: string[], branches: string[] } {
+  const files: string[] = []
+  const branches: string[] = []
+
+  for (const edge of edges) {
+    const reason = edge.reasons.find(candidate => candidate.code === code)
+
+    if (!reason) {
+      continue
+    }
+
+    files.push(...(reason.files ?? []))
+    branches.push(...relatedBranches([edge], branchName))
+  }
+
+  return {
+    files: sortedUnique(files),
+    branches: sortedUnique(branches)
+  }
+}
+
+function relatedBranches(
+  edges: BranchConflictGraphEdge[],
+  branchName: string
+): string[] {
+  return sortedUnique(edges.flatMap(edge => {
+    if (edge.pair.leftBranchName === branchName) {
+      return [edge.pair.rightBranchName]
+    }
+
+    if (edge.pair.rightBranchName === branchName) {
+      return [edge.pair.leftBranchName]
+    }
+
+    return []
+  }))
 }
 
 // 단일 branch에 적용되는 risk reason을 우선순위 순서대로 생성
@@ -315,4 +498,8 @@ function wildcardToRegExp(pattern: string): RegExp {
 // wildcard가 아닌 문자를 정규식 literal로 안전하게 이스케이프
 function escapeRegExp(value: string): string {
   return value.replace(/[|\\{}()[\]^$+?.]/g, "\\$&")
+}
+
+function sortedUnique(values: string[]): string[] {
+  return [...new Set(values)].sort()
 }
