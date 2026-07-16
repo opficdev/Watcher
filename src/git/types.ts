@@ -42,6 +42,13 @@ export type MergeCodeContextLineRange = {
   endLine: number
 }
 
+export type GitObjectSnippetRequest = {
+  key: string
+  objectOid: string
+  filePath: string
+  range: MergeCodeContextLineRange
+}
+
 export type MergeCodeContextSnippet = {
   status: MergeCodeContextFileStatus
   filePath: string

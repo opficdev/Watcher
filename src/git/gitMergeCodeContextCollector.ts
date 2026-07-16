@@ -1,8 +1,7 @@
 import { execFile, spawn } from "node:child_process"
 import {
   readGitObjectConflictMarkerRanges,
-  readGitObjectSnippets,
-  type GitObjectSnippetRequest
+  readGitObjectSnippets
 } from "./gitObjectBatchReader.js"
 import {
   overlapRegions,
@@ -13,6 +12,7 @@ import type {
   GitDiffHunk,
   GitMergeCodeContextPairResult,
   GitMergeTreePairResult,
+  GitObjectSnippetRequest,
   MergeCodeContextCommitMetadata,
   MergeCodeContextEvidence,
   MergeCodeContextLineRange,

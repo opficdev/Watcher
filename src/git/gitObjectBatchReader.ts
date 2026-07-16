@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process"
 import { TextDecoder } from "node:util"
 import type {
+  GitObjectSnippetRequest,
   MergeCodeContextLineRange,
   MergeCodeContextSnippet
 } from "./types.js"
@@ -9,13 +10,6 @@ const STDERR_LIMIT = 16 * 1024
 const CHECK_OUTPUT_LIMIT = 16 * 1024 * 1024
 const SNIPPET_MAX_BYTES = 32 * 1024
 const SNIPPET_MAX_LINES = 400
-
-export type GitObjectSnippetRequest = {
-  key: string
-  objectOid: string
-  filePath: string
-  range: MergeCodeContextLineRange
-}
 
 type GitObjectRequestGroup = {
   objectSpec: string
