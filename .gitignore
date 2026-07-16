@@ -10,3 +10,6 @@ dist/
 
 # macOS
 .DS_Store
+
+# AI
+superpowers/
