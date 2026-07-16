@@ -1,4 +1,7 @@
-import type { BranchComparisonPair } from "../branches/types.js"
+import type {
+  BranchComparisonPair,
+  BranchComparisonRound
+} from "../branches/types.js"
 
 export type GitMergeSignalStatus =
   | "clean"
@@ -18,6 +21,17 @@ export type GitMergeTreePairResult = {
   conflicts: GitMergeTreeConflict[]
   errorMessage?: string
 }
+
+export type GitMergeTreeRoundCollectionOptions = {
+  repositoryPath: string
+  commitOidByBranch: ReadonlyMap<string, string>
+  stderrLimit?: number
+}
+
+export type GitMergeTreeRoundCollector = (
+  round: BranchComparisonRound,
+  options: GitMergeTreeRoundCollectionOptions
+) => Promise<GitMergeTreePairResult[]>
 
 export type GitMergeSignal = {
   status: GitMergeSignalStatus
