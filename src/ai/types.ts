@@ -52,6 +52,12 @@ export type AiPredictionPairCodeContext = {
   status: AiPredictionPairCodeContextStatus
   overlapFiles: string[]
   evidence: MergeCodeContextEvidence[]
+  // 조합 상한 안에 포함된 file과 hunk 수
+  includedFileCount: number
+  includedHunkCount: number
+  // 조합 상한으로 누락된 file과 hunk 수
+  omittedFileCount: number
+  omittedHunkCount: number
   errorMessage?: string
 }
 

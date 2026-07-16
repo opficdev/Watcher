@@ -49,6 +49,10 @@ test("builds confirmed conflict pair evidence", () => {
   assert.equal(payload.codeContext.status, "available")
   assert.deepEqual(payload.codeContext.overlapFiles, ["src/value.ts"])
   assert.deepEqual(payload.codeContext.evidence, [context])
+  assert.equal(payload.codeContext.includedFileCount, 1)
+  assert.equal(payload.codeContext.includedHunkCount, 1)
+  assert.equal(payload.codeContext.omittedFileCount, 0)
+  assert.equal(payload.codeContext.omittedHunkCount, 0)
 })
 
 // 같은 hunk가 겹친 clean merge 조합을 potential overlap evidence로 구분하는지 확인
@@ -68,6 +72,43 @@ test("builds potential overlap pair evidence", () => {
   assert.equal(payload.merge.status, "clean")
   assert.deepEqual(payload.merge.conflictFiles, [])
   assert.equal(payload.codeContext.evidence[0]?.kind, "clean_hunk_overlap")
+  assert.equal(payload.codeContext.includedFileCount, 1)
+  assert.equal(payload.codeContext.includedHunkCount, 1)
+  assert.equal(payload.codeContext.omittedFileCount, 0)
+  assert.equal(payload.codeContext.omittedHunkCount, 0)
+})
+
+// 조합 상한을 UTF-8 byte로 적용하고 hunk의 네 version을 함께 포함하거나 누락하는지 확인
+test("limits pair code context without splitting hunk versions", () => {
+  const pair = comparisonPair()
+  const included = codeEvidence(
+    pair,
+    "clean_hunk_overlap",
+    "src/included.ts",
+    "가".repeat(10922) + "ab",
+    true
+  )
+  const omitted = codeEvidence(
+    pair,
+    "clean_hunk_overlap",
+    "src/omitted.ts",
+    "b"
+  )
+  const payload = build(
+    graphEdge(pair, "potential_overlap", [
+      "same_hunk_overlap",
+      "same_file_overlap"
+    ]),
+    mergeResult(pair, "clean"),
+    codeContextResult(pair, [included, omitted, omitted])
+  )
+
+  assert.deepEqual(payload.codeContext.evidence, [included])
+  assert.equal(payload.codeContext.includedFileCount, 1)
+  assert.equal(payload.codeContext.includedHunkCount, 1)
+  assert.equal(payload.codeContext.omittedFileCount, 1)
+  assert.equal(payload.codeContext.omittedHunkCount, 2)
+  assert.equal(payload.codeContext.evidence[0]?.baseSnippet.truncated, true)
 })
 
 // 확정 conflict의 코드 문맥이 없거나 실패해도 조합 evidence 자체는 유지하는지 확인
@@ -86,12 +127,20 @@ test("keeps confirmed conflict evidence when code context is unavailable", () =>
   assert.deepEqual(missing.codeContext, {
     status: "missing",
     overlapFiles: [],
-    evidence: []
+    evidence: [],
+    includedFileCount: 0,
+    includedHunkCount: 0,
+    omittedFileCount: 0,
+    omittedHunkCount: 0
   })
   assert.deepEqual(failed.codeContext, {
     status: "failed",
     overlapFiles: [],
     evidence: [],
+    includedFileCount: 0,
+    includedHunkCount: 0,
+    omittedFileCount: 0,
+    omittedHunkCount: 0,
     errorMessage: "code context failed"
   })
 })
@@ -202,24 +251,29 @@ function mergeResult(
 // 코드 문맥 하나를 포함하는 테스트용 조합 결과 구성
 function codeContextResult(
   pair: BranchComparisonPair,
-  evidence: MergeCodeContextEvidence
+  evidence: MergeCodeContextEvidence | MergeCodeContextEvidence[]
 ): GitMergeCodeContextPairResult {
+  const items = Array.isArray(evidence) ? evidence : [evidence]
+
   return {
     pair,
-    overlapFiles: ["src/value.ts"],
-    evidence: [evidence]
+    overlapFiles: [...new Set(items.map(item => item.filePath))],
+    evidence: items
   }
 }
 
 // 네 version의 commit metadata와 snippet을 포함하는 테스트용 evidence 구성
 function codeEvidence(
   pair: BranchComparisonPair,
-  kind: MergeCodeContextKind = "confirmed_conflict"
+  kind: MergeCodeContextKind = "confirmed_conflict",
+  filePath = "src/value.ts",
+  content?: string,
+  truncated = false
 ): MergeCodeContextEvidence {
   return {
     pair,
     kind,
-    filePath: "src/value.ts",
+    filePath,
     mergeBaseOid: "base-oid",
     mergedTreeOid: "merged-tree-oid",
     baseCommit: {
@@ -245,21 +299,25 @@ function codeEvidence(
       committedAt: "2026-07-17T00:02:00.000Z",
       subject: "right"
     },
-    baseSnippet: snippet("base"),
-    leftSnippet: snippet("left"),
-    rightSnippet: snippet("right"),
-    mergedSnippet: snippet("merged")
+    baseSnippet: snippet(content ?? "base", filePath, truncated),
+    leftSnippet: snippet(content ?? "left", filePath, truncated),
+    rightSnippet: snippet(content ?? "right", filePath, truncated),
+    mergedSnippet: snippet(content ?? "merged", filePath, truncated)
   }
 }
 
 // 한 줄 text file을 표현하는 테스트용 snippet 구성
-function snippet(content: string) {
+function snippet(
+  content: string,
+  filePath = "src/value.ts",
+  truncated = false
+) {
   return {
     status: "text" as const,
-    filePath: "src/value.ts",
+    filePath,
     content,
     startLine: 1,
     endLine: 1,
-    truncated: false
+    truncated
   }
 }

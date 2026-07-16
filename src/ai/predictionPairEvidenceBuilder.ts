@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer"
 import type { BranchComparisonPair } from "../branches/types.js"
 import type {
   GitMergeCodeContextPairResult,
@@ -11,6 +12,9 @@ import type {
   AiPredictionPairMergeStatus,
   AiPredictionPairTargetStatus
 } from "./types.js"
+
+// 한 branch 조합에 포함할 수 있는 코드 원문의 UTF-8 byte 상한
+const CODE_CONTEXT_MAX_BYTES = 128 * 1024
 
 // 선택된 branch 조합의 graph, merge, 코드 문맥을 하나의 AI evidence로 구성
 export function build(
@@ -134,7 +138,11 @@ function codeContextFor(
     return {
       status: "missing",
       overlapFiles: [],
-      evidence: []
+      evidence: [],
+      includedFileCount: 0,
+      includedHunkCount: 0,
+      omittedFileCount: 0,
+      omittedHunkCount: 0
     }
   }
 
@@ -143,13 +151,71 @@ function codeContextFor(
       status: "failed",
       overlapFiles: [],
       evidence: [],
+      includedFileCount: 0,
+      includedHunkCount: 0,
+      omittedFileCount: 0,
+      omittedHunkCount: 0,
       errorMessage: result.errorMessage
     }
   }
 
+  const limited = limitedCodeContextFor(result.evidence)
+
   return {
     status: "available",
     overlapFiles: result.overlapFiles,
-    evidence: result.evidence
+    ...limited
   }
+}
+
+// evidence 순서를 유지하며 hunk의 네 version을 분리하지 않고 조합 상한 적용
+function limitedCodeContextFor(evidence: MergeCodeContextEvidence[]) {
+  let includedByteCount = 0
+  let includedHunkCount = 0
+
+  for (const item of evidence) {
+    const byteCount = rawCodeByteCountFor(item)
+
+    if (CODE_CONTEXT_MAX_BYTES < includedByteCount + byteCount) {
+      break
+    }
+
+    includedByteCount += byteCount
+    includedHunkCount += 1
+  }
+
+  const includedEvidence = evidence.slice(0, includedHunkCount)
+  const omittedEvidence = evidence.slice(includedHunkCount)
+
+  return {
+    evidence: includedEvidence,
+    includedFileCount: uniqueFileCountFor(includedEvidence),
+    includedHunkCount,
+    omittedFileCount: uniqueFileCountFor(omittedEvidence),
+    omittedHunkCount: omittedEvidence.length
+  }
+}
+
+// 한 hunk의 base, left, right, merged 코드 원문 UTF-8 byte 합산
+function rawCodeByteCountFor(evidence: MergeCodeContextEvidence): number {
+  const snippets = [
+    evidence.baseSnippet,
+    evidence.leftSnippet,
+    evidence.rightSnippet,
+    evidence.mergedSnippet
+  ]
+
+  return snippets.reduce(
+    (byteCount, snippet) => byteCount + (
+      typeof snippet.content === "string"
+        ? Buffer.byteLength(snippet.content, "utf8")
+        : 0
+    ),
+    0
+  )
+}
+
+// evidence 목록에 포함된 중복 없는 file 수 계산
+function uniqueFileCountFor(evidence: MergeCodeContextEvidence[]): number {
+  return new Set(evidence.map(item => item.filePath)).size
 }
