@@ -18,6 +18,8 @@ export type GitMergeTreeFailureStage = "preparation" | "merge"
 export type GitMergeTreePairResult = {
   pair: BranchComparisonPair
   status: GitMergeSignalStatus
+  leftCommitOid?: string
+  rightCommitOid?: string
   mergedTreeOid?: string
   conflictFiles: string[]
   conflicts: GitMergeTreeConflict[]

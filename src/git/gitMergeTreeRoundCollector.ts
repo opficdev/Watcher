@@ -17,9 +17,13 @@ export async function collect(
     return []
   }
 
-  const input = `${round.pairs.map(pair => [
-    oidFor(pair.leftBranchName, options.commitOidByBranch),
-    oidFor(pair.rightBranchName, options.commitOidByBranch)
+  const oidsByPair = round.pairs.map(pair => ({
+    left: oidFor(pair.leftBranchName, options.commitOidByBranch),
+    right: oidFor(pair.rightBranchName, options.commitOidByBranch)
+  }))
+  const input = `${oidsByPair.map(oids => [
+    oids.left,
+    oids.right
   ].join(" ")).join("\n")}\n`
   const parser = new MergeTreeOutputParser(round.pairs)
   const stderrLimit = options.stderrLimit ?? DEFAULT_STDERR_LIMIT
@@ -100,7 +104,19 @@ export async function collect(
       }
 
       try {
-        resolve(parser.finish())
+        resolve(parser.finish().map((result, index) => {
+          const oids = oidsByPair[index]
+
+          if (!oids) {
+            throw new Error(`Missing commit OID snapshot for pair ${index}`)
+          }
+
+          return {
+            ...result,
+            leftCommitOid: oids.left,
+            rightCommitOid: oids.right
+          }
+        }))
       } catch (error) {
         reject(errorFor(error))
       }

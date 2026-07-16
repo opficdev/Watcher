@@ -36,6 +36,22 @@ test("collects mixed merge results for one round", async () => {
       "confirmed_conflict",
       "confirmed_conflict"
     ])
+    assert.equal(
+      results[0]?.leftCommitOid,
+      fixture.commitOidByBranch.get("clean/left")
+    )
+    assert.equal(
+      results[0]?.rightCommitOid,
+      fixture.commitOidByBranch.get("clean/right")
+    )
+    assert.equal(
+      results[1]?.leftCommitOid,
+      fixture.commitOidByBranch.get("content/left")
+    )
+    assert.equal(
+      results[1]?.rightCommitOid,
+      fixture.commitOidByBranch.get("content/right")
+    )
     assert.match(results[0]?.mergedTreeOid ?? "", /^[0-9a-f]{40}$/)
     assert.deepEqual(results[0]?.conflictFiles, [])
     assert.deepEqual(results[1]?.conflictFiles, ["shared.txt"])
@@ -48,6 +64,34 @@ test("collects mixed merge results for one round", async () => {
     assert.equal(results[3]?.conflicts.some(conflict =>
       conflict.type === "CONFLICT (modify/delete)"
     ), true)
+  } finally {
+    await fixture.remove()
+  }
+})
+
+// merge-tree 입력 이후 원본 map이 바뀌어도 실행에 사용한 OID를 보존하는지 확인
+test("keeps commit OID snapshot after collection starts", async () => {
+  const fixture = await createGitFixture()
+  const round = comparisonRound([
+    pair("clean/left", "clean/right")
+  ])
+  const commitOidByBranch = new Map(fixture.commitOidByBranch)
+  const leftOid = commitOidByBranch.get("clean/left")
+  const rightOid = commitOidByBranch.get("clean/right")
+
+  try {
+    const resultPromise = collect(round, {
+      repositoryPath: fixture.repositoryPath,
+      commitOidByBranch
+    })
+
+    commitOidByBranch.set("clean/left", "f".repeat(40))
+    commitOidByBranch.set("clean/right", "e".repeat(40))
+
+    const [result] = await resultPromise
+
+    assert.equal(result?.leftCommitOid, leftOid)
+    assert.equal(result?.rightCommitOid, rightOid)
   } finally {
     await fixture.remove()
   }
