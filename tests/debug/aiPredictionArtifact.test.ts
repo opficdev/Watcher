@@ -1,0 +1,109 @@
+import test from "node:test"
+import assert from "node:assert/strict"
+import { createHash } from "node:crypto"
+import { sanitizeAiPredictionPromptDebugEvent } from "../../src/debug/aiPredictionArtifact.js"
+
+// AI prompt artifact가 코드 원문 대신 file과 line metadata를 기록하는지 확인
+test("replaces AI prompt code context with metadata", () => {
+  const content = "const consumerSourceMarker = true\nreturn consumerSourceMarker\n"
+  const event = {
+    targetBranches: [{
+      branchName: "feature/left",
+      baseBranch: "main"
+    }],
+    prompt: {
+      systemPrompt: "Review merge risk",
+      userPrompt: JSON.stringify({
+        codeContext: {
+          evidence: [{
+            leftSnippet: {
+              status: "text",
+              filePath: "Sources/Feature.swift",
+              content,
+              startLine: 12,
+              endLine: 13,
+              truncated: false
+            }
+          }]
+        }
+      }, null, 2),
+      responseShape: "predictionPairCleanOverlap"
+    }
+  }
+
+  const artifact = sanitizeAiPredictionPromptDebugEvent(event)
+  const payload = JSON.parse(artifact.prompt.userPrompt) as {
+    codeContext?: {
+      evidence?: Array<{
+        leftSnippet?: Record<string, unknown>
+      }>
+    }
+  }
+
+  assert.deepEqual(payload.codeContext?.evidence?.[0]?.leftSnippet, {
+    status: "text",
+    filePath: "Sources/Feature.swift",
+    startLine: 12,
+    endLine: 13,
+    truncated: false,
+    contentByteLength: Buffer.byteLength(content, "utf8"),
+    contentHash: createHash("sha256").update(content, "utf8").digest("hex"),
+    lineCount: 2
+  })
+  assert.equal(JSON.parse(event.prompt.userPrompt).codeContext.evidence[0].leftSnippet.content, content)
+  assert.doesNotMatch(JSON.stringify(artifact), /consumerSourceMarker/)
+})
+
+// 빈 코드 문맥도 0 byte 원문 대신 line과 hash metadata를 기록하는지 확인
+test("records metadata for empty AI prompt code context", () => {
+  const artifact = sanitizeAiPredictionPromptDebugEvent({
+    targetBranches: [],
+    prompt: {
+      systemPrompt: "Review merge risk",
+      userPrompt: JSON.stringify({
+        snippet: {
+          filePath: "Sources/Empty.swift",
+          content: "",
+          startLine: 1,
+          endLine: 1,
+          truncated: false
+        }
+      })
+    }
+  })
+  const payload = JSON.parse(artifact.prompt.userPrompt) as {
+    snippet?: Record<string, unknown>
+  }
+
+  assert.deepEqual(payload.snippet, {
+    filePath: "Sources/Empty.swift",
+    startLine: 1,
+    endLine: 1,
+    truncated: false,
+    contentByteLength: 0,
+    contentHash: createHash("sha256").update("", "utf8").digest("hex"),
+    lineCount: 1
+  })
+})
+
+// 비정형 user prompt도 원문을 저장하지 않고 크기와 hash만 기록하는지 확인
+test("redacts non-JSON AI user prompt", () => {
+  const userPrompt = "consumer repository source"
+  const event = {
+    targetBranches: [],
+    prompt: {
+      systemPrompt: "Review merge risk",
+      userPrompt
+    }
+  }
+
+  const artifact = sanitizeAiPredictionPromptDebugEvent(event)
+
+  assert.deepEqual(JSON.parse(artifact.prompt.userPrompt), {
+    contentByteLength: Buffer.byteLength(userPrompt, "utf8"),
+    contentHash: createHash("sha256").update(userPrompt, "utf8").digest("hex"),
+    redacted: true
+  })
+  assert.equal(event.prompt.userPrompt, userPrompt)
+  assert.doesNotMatch(JSON.stringify(artifact), /consumer repository source/)
+})

@@ -19,6 +19,7 @@ import { select as selectAiPredictionTargets } from "../ai/predictionTargetSelec
 import { build as buildMergeRiskReport } from "../reports/reportBuilder.js"
 import { format as formatMergeRiskReportMarkdown } from "../reports/markdownFormatter.js"
 import { send as sendMergeRiskReport } from "../reportChannels/reportChannel.js"
+import { sanitizeAiPredictionPromptDebugEvent } from "../debug/aiPredictionArtifact.js"
 import { writerFor as debugArtifactWriterFor } from "../debug/debugArtifact.js"
 import type {
   AiPredictionEvidencePayload
@@ -216,8 +217,11 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
     {
       debugObserver: debugArtifactWriter
         ? {
-          // 생성된 AI prompt를 debug artifact로 기록
-          onPromptBuilt: event => debugArtifactWriter.writeJson("ai-prompt.json", event),
+          // 생성된 AI prompt에서 코드 원문을 제거한 표현만 debug artifact로 기록
+          onPromptBuilt: event => debugArtifactWriter.writeJson(
+            "ai-prompt.json",
+            sanitizeAiPredictionPromptDebugEvent(event)
+          ),
           // 받은 AI response를 debug artifact로 기록
           onResponseReceived: event => debugArtifactWriter.writeJson("ai-response.json", event),
           // AI prediction 실패 정보를 debug artifact로 기록

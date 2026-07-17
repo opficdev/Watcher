@@ -74,6 +74,7 @@ test("writes merge risk debug artifacts", async () => {
   const originalOpenAiApiKey = process.env.OPENAI_API_KEY
   const originalDiscordWebhookUrl = process.env.DISCORD_WEBHOOK_URL
   let openAiRequestCount = 0
+  let openAiUserPrompt: string | undefined
 
   process.env.OPENAI_API_KEY = "openai-secret"
   process.env.DISCORD_WEBHOOK_URL = "https://discord.test/webhook-secret"
@@ -89,6 +90,15 @@ test("writes merge risk debug artifacts", async () => {
     openAiRequestCount += 1
     assert.equal(request.url, "https://api.openai.com/v1/responses")
     assert.equal(request.headers.get("Authorization"), "Bearer openai-secret")
+    const requestBody = await request.json() as {
+      input?: Array<{
+        role?: string
+        content?: string
+      }>
+    }
+    openAiUserPrompt = requestBody.input
+      ?.find(item => item.role === "user")
+      ?.content
 
     return jsonResponse({
       output_text: JSON.stringify({
@@ -143,6 +153,11 @@ test("writes merge risk debug artifacts", async () => {
         branchName?: string
       }>
     }>(fixture.debugArtifactDir, "ai-result.json")
+    const aiPromptArtifact = await readJson<{
+      prompt?: {
+        userPrompt?: string
+      }
+    }>(fixture.debugArtifactDir, "ai-prompt.json")
     const deterministicArtifact = await readJson<{
       risks?: Array<{
         branchName?: string
@@ -174,6 +189,7 @@ test("writes merge risk debug artifacts", async () => {
     ))).join("\n")
 
     assert.equal(openAiRequestCount, 1)
+    assert.equal(aiPromptArtifact.prompt?.userPrompt, openAiUserPrompt)
     assert.equal(runArtifact.repository, "opficdev/Watcher")
     assert.equal(runArtifact.baseBranch, "main")
     assert.equal(
