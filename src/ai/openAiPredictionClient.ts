@@ -1,6 +1,7 @@
 import type {
   AiPredictionClient,
-  AiPredictionPrompt
+  AiPredictionPrompt,
+  AiPredictionPromptResponseShape
 } from "./types.js"
 
 // workflow log가 과도하게 커지지 않도록 OpenAI 실패 응답 본문을 제한
@@ -96,6 +97,7 @@ function openAiRequestBodyFor(
   model: string
 ): Record<string, unknown> {
   const responseShape = prompt.responseShape ?? "prediction"
+  const responseFormat = responseFormatFor(responseShape)
 
   return {
     model,
@@ -112,15 +114,42 @@ function openAiRequestBodyFor(
     text: {
       format: {
         type: "json_schema",
-        name: responseShape === "predictionBatch"
-          ? "ai_prediction_batch"
-          : "ai_prediction",
+        name: responseFormat.name,
         strict: true,
-        schema: responseShape === "predictionBatch"
-          ? aiPredictionBatchSchema()
-          : aiPredictionSchema()
+        schema: responseFormat.schema
       }
     }
+  }
+}
+
+// prompt가 요청한 응답 형태를 OpenAI schema 이름과 구조에 매핑
+function responseFormatFor(
+  responseShape: AiPredictionPromptResponseShape
+): {
+  name: string
+  schema: Record<string, unknown>
+} {
+  switch (responseShape) {
+    case "predictionBatch":
+      return {
+        name: "ai_prediction_batch",
+        schema: aiPredictionBatchSchema()
+      }
+    case "predictionPairConfirmedConflict":
+      return {
+        name: "ai_prediction_pair_confirmed_conflict",
+        schema: aiConfirmedConflictSchema()
+      }
+    case "predictionPairCleanOverlap":
+      return {
+        name: "ai_prediction_pair_clean_overlap",
+        schema: aiCleanOverlapSchema()
+      }
+    default:
+      return {
+        name: "ai_prediction",
+        schema: aiPredictionSchema()
+      }
   }
 }
 
@@ -219,6 +248,154 @@ function aiPredictionSchema(): Record<string, unknown> {
       "prediction",
       "recommendedActions"
     ]
+  }
+}
+
+// 확정 conflict 해결 응답을 위한 OpenAI structured output schema
+function aiConfirmedConflictSchema(): Record<string, unknown> {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      kind: {
+        type: "string",
+        enum: ["confirmed_conflict"]
+      },
+      pair: branchPairSchema(),
+      conflictCause: causeSchema(),
+      integrationOrder: integrationOrderSchema(),
+      patches: {
+        type: "array",
+        minItems: 1,
+        items: patchSchema()
+      }
+    },
+    required: [
+      "kind",
+      "pair",
+      "conflictCause",
+      "integrationOrder",
+      "patches"
+    ]
+  }
+}
+
+// clean overlap 예방 응답을 위한 OpenAI structured output schema
+function aiCleanOverlapSchema(): Record<string, unknown> {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      kind: {
+        type: "string",
+        enum: ["clean_overlap"]
+      },
+      pair: branchPairSchema(),
+      overlapCause: causeSchema(),
+      integrationOrder: integrationOrderSchema(),
+      preventiveActions: {
+        type: "array",
+        minItems: 1,
+        items: preventiveActionSchema()
+      }
+    },
+    required: [
+      "kind",
+      "pair",
+      "overlapCause",
+      "integrationOrder",
+      "preventiveActions"
+    ]
+  }
+}
+
+// 좌우 순서를 보존하는 branch 조합 식별 schema
+function branchPairSchema(): Record<string, unknown> {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      leftBranchName: { type: "string" },
+      rightBranchName: { type: "string" }
+    },
+    required: ["leftBranchName", "rightBranchName"]
+  }
+}
+
+// conflict 또는 overlap 원인과 관련 파일 schema
+function causeSchema(): Record<string, unknown> {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      summary: { type: "string" },
+      files: stringArraySchema()
+    },
+    required: ["summary", "files"]
+  }
+}
+
+// merge 또는 rebase 작업 순서 schema
+function integrationOrderSchema(): Record<string, unknown> {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      strategy: {
+        type: "string",
+        enum: ["merge", "rebase"]
+      },
+      firstBranchName: { type: "string" },
+      secondBranchName: { type: "string" },
+      reason: { type: "string" },
+      steps: {
+        ...stringArraySchema(),
+        minItems: 1
+      }
+    },
+    required: [
+      "strategy",
+      "firstBranchName",
+      "secondBranchName",
+      "reason",
+      "steps"
+    ]
+  }
+}
+
+// 확정 conflict의 파일별 patch schema
+function patchSchema(): Record<string, unknown> {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      filePath: { type: "string" },
+      patch: { type: "string" },
+      reason: { type: "string" }
+    },
+    required: ["filePath", "patch", "reason"]
+  }
+}
+
+// clean overlap의 예방 조치 schema
+function preventiveActionSchema(): Record<string, unknown> {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      title: { type: "string" },
+      description: { type: "string" },
+      files: stringArraySchema()
+    },
+    required: ["title", "description", "files"]
+  }
+}
+
+// 문자열 목록 field의 공통 schema
+function stringArraySchema(): Record<string, unknown> {
+  return {
+    type: "array",
+    items: { type: "string" }
   }
 }
 
