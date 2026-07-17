@@ -154,8 +154,8 @@ artifact에는 다음 파일이 포함됩니다.
 | `branch-pairs.json` | base branch와 감시 대상 branch 전체의 이름순 비교 조합 |
 | `deterministic-evidence.json` | git merge signal, changed files, changed hunks, check/PR metadata, deterministic risk 결과 |
 | `ai-target-selection.json` | AI 호출 대상 branch와 skipped branch 사유 |
-| `ai-prompt.json` | OpenAI에 전달한 system prompt, user prompt, response shape |
-| `ai-response.json` | provider가 반환한 raw response |
+| `ai-prompt.json` | OpenAI 요청 대상 branch, system prompt, response shape, 코드 원문을 제외한 file·line range·길이·hash·잘림 여부 |
+| `ai-response.json` | provider response와 제안 patch 원문을 제외한 byte length·line count·hunk range |
 | `ai-error.json` | provider 호출 또는 response validation 실패 요약. 실패가 없으면 생성되지 않을 수 있음 |
 | `ai-result.json` | response validation 이후 branch별 AI prediction, skipped, failed 매핑 결과 |
 | `report.md` | 최종 Markdown report |
