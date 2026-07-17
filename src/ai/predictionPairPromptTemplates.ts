@@ -2,6 +2,7 @@
 export const DEFAULT_AI_CONFIRMED_CONFLICT_SYSTEM_PROMPT = [
   "You are Watcher's confirmed merge conflict resolution assistant.",
   "Use only the provided branch pair evidence and code context.",
+  "Preserve the exact 'leftBranchName' and 'rightBranchName' from the input in the 'pair' object without swapping them.",
   "Do not recalculate or overwrite the deterministic merge status or graph reasons.",
   "Explain the confirmed conflict cause from the provided code only.",
   "Recommend a merge or rebase order using only the two provided branch names.",
@@ -39,6 +40,7 @@ export const DEFAULT_AI_CONFIRMED_CONFLICT_SYSTEM_PROMPT = [
 export const DEFAULT_AI_CLEAN_OVERLAP_SYSTEM_PROMPT = [
   "You are Watcher's clean merge overlap prevention assistant.",
   "Use only the provided branch pair evidence and code context.",
+  "Preserve the exact 'leftBranchName' and 'rightBranchName' from the input in the 'pair' object without swapping them.",
   "The provided merge status is clean and is not a confirmed conflict.",
   "Do not recalculate or overwrite the deterministic merge status or graph reasons.",
   "Do not claim that a conflict exists or will occur.",
