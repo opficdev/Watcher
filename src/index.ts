@@ -19,10 +19,18 @@ export {
   buildBatch as buildAiPredictionBatchPrompt
 } from "./ai/predictionPromptBuilder.js"
 export {
+  build as buildAiPredictionPairPrompt
+} from "./ai/predictionPairPromptBuilder.js"
+export {
   DEFAULT_AI_PREDICTION_BATCH_SYSTEM_PROMPT,
   DEFAULT_AI_PREDICTION_SYSTEM_PROMPT
 } from "./ai/promptTemplates.js"
+export {
+  DEFAULT_AI_CLEAN_OVERLAP_SYSTEM_PROMPT,
+  DEFAULT_AI_CONFIRMED_CONFLICT_SYSTEM_PROMPT
+} from "./ai/predictionPairPromptTemplates.js"
 export { predict as predictMergeRisksWithAi } from "./ai/predictionRunner.js"
+export { predict as predictBranchPairsWithAi } from "./ai/predictionPairRunner.js"
 export {
   DEFAULT_AI_PREDICTION_TARGET_STATUS,
   select as selectAiPredictionTargets
@@ -31,6 +39,9 @@ export {
   validate as validateAiPredictionResponse,
   validateBatch as validateAiPredictionBatchResponse
 } from "./ai/predictionResponseValidator.js"
+export {
+  validate as validateAiPredictionPairResponse
+} from "./ai/predictionPairResponseValidator.js"
 export { collectGitMergeSignal } from "./git/gitMergeSignalCollector.js"
 export { send as sendMergeRiskReport } from "./reportChannels/reportChannel.js"
 export { analyze as analyzeBranchMergeRisks } from "./risks/riskAnalyzer.js"
@@ -52,6 +63,19 @@ export type {
   AiPredictionEvidencePayload,
   AiPredictionFailedResult,
   AiPredictionFailureDebugEvent,
+  AiPredictionPairBranchMetadata,
+  AiPredictionPairCodeContext,
+  AiPredictionPairCodeContextStatus,
+  AiPredictionPairEvidencePayload,
+  AiPredictionPairFailedResult,
+  AiPredictionPairIntegrationOrder,
+  AiPredictionPairMergeStatus,
+  AiPredictionPairPatch,
+  AiPredictionPairPredictedResult,
+  AiPredictionPairPreventiveAction,
+  AiPredictionPairResponse,
+  AiPredictionPairResult,
+  AiPredictionPairTargetStatus,
   AiPredictionPrompt,
   AiPredictionPromptBuildOptions,
   AiPredictionPromptDebugEvent,
@@ -62,10 +86,13 @@ export type {
   AiPredictionRunOptions,
   AiPredictionSkippedResult,
   AiRecommendedAction,
-  AiRecommendedActionPriority
+  AiRecommendedActionPriority,
+  AiCleanOverlapResponse,
+  AiConfirmedConflictResponse
 } from "./ai/types.js"
 
 export type {
+  BranchComparisonPair,
   BranchContext,
   BranchCheckMetadata,
   BranchPullRequestMetadata,
