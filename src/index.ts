@@ -53,6 +53,9 @@ export {
   build as buildBranchPairMergeRiskReport
 } from "./reports/branchPairReportBuilder.js"
 export { format as formatMergeRiskReportMarkdown } from "./reports/markdownFormatter.js"
+export {
+  format as formatBranchPairMergeRiskReportMarkdown
+} from "./reports/branchPairMarkdownFormatter.js"
 export { BranchRiskStatus } from "./risks/types.js"
 
 export type { BranchSource } from "./branches/branchCollector.js"
