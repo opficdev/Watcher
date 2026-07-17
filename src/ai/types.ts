@@ -1,6 +1,19 @@
-import type { BranchContext } from "../branches/types.js"
-import type { GitMergeSignal } from "../git/types.js"
-import type { BranchChangedHunk, BranchRisk } from "../risks/types.js"
+import type {
+  BranchComparisonPair,
+  BranchContext
+} from "../branches/types.js"
+import type {
+  GitMergeSignal,
+  GitMergeSignalStatus,
+  GitMergeTreeConflict,
+  MergeCodeContextEvidence
+} from "../git/types.js"
+import type {
+  BranchChangedHunk,
+  BranchConflictGraphEdgeReason,
+  BranchConflictGraphEdgeStatus,
+  BranchRisk
+} from "../risks/types.js"
 
 // AI prediction 생성에 사용할 deterministic 분석 근거 묶음
 export type AiPredictionEvidencePayload = {
@@ -8,6 +21,62 @@ export type AiPredictionEvidencePayload = {
   possibility: BranchRisk
   gitSignal: GitMergeSignal
   changedHunks: BranchChangedHunk[]
+}
+
+// AI가 분석할 수 있는 확정 conflict와 critical potential overlap 상태
+export type AiPredictionPairTargetStatus = Extract<
+  BranchConflictGraphEdgeStatus,
+  "confirmed_conflict" | "potential_overlap"
+>
+
+// AI evidence에 포함할 수 있는 성공한 merge 수집 상태
+export type AiPredictionPairMergeStatus = Exclude<
+  GitMergeSignalStatus,
+  "merge_check_failed"
+>
+
+// branch 조합의 한쪽 branch 이름과 수집된 commit OID
+export type AiPredictionPairBranchMetadata = {
+  name: string
+  commitOid?: string
+}
+
+// branch 조합 코드 문맥의 수집 결과 상태
+export type AiPredictionPairCodeContextStatus =
+  | "available"
+  | "missing"
+  | "failed"
+
+// branch 조합에서 겹친 파일과 수집된 코드 문맥 또는 실패 정보
+export type AiPredictionPairCodeContext = {
+  status: AiPredictionPairCodeContextStatus
+  overlapFiles: string[]
+  evidence: MergeCodeContextEvidence[]
+  // 조합 상한 안에 포함된 file과 hunk 수
+  includedFileCount: number
+  includedHunkCount: number
+  // 조합 상한으로 누락된 file과 hunk 수
+  omittedFileCount: number
+  omittedHunkCount: number
+  errorMessage?: string
+}
+
+// 위험한 branch 조합 하나에 속한 deterministic 상태와 코드 문맥 묶음
+export type AiPredictionPairEvidencePayload = {
+  pair: BranchComparisonPair
+  targetStatus: AiPredictionPairTargetStatus
+  reasons: BranchConflictGraphEdgeReason[]
+  branches: {
+    left: AiPredictionPairBranchMetadata
+    right: AiPredictionPairBranchMetadata
+  }
+  merge: {
+    status: AiPredictionPairMergeStatus
+    mergedTreeOid?: string
+    conflictFiles: string[]
+    conflicts: GitMergeTreeConflict[]
+  }
+  codeContext: AiPredictionPairCodeContext
 }
 
 // AI provider에 전달할 system/user prompt 묶음
