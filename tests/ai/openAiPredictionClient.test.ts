@@ -120,6 +120,50 @@ test("sends batch response schema to OpenAI", async () => {
   assert.equal(predictionSchema?.properties?.falsePositiveNotes, undefined)
 })
 
+// 확정 conflict 요청이 patch 전용 schema를 사용하는지 확인
+test("sends confirmed conflict pair response schema to OpenAI", async () => {
+  const spy = fetchSpy(validOpenAiResponse())
+  const client = new OpenAiPredictionClient({
+    apiKey: "openai-key",
+    fetch: spy
+  })
+
+  await client.predict(confirmedConflictPairPrompt())
+
+  const body = JSON.parse(String(spy.requests[0]?.init.body)) as PairRequestBody
+  const schema = body.text.format.schema
+
+  assert.equal(body.text.format.name, "ai_prediction_pair_confirmed_conflict")
+  assert.equal(schema.additionalProperties, false)
+  assert.notEqual(schema.properties.conflictCause, undefined)
+  assert.notEqual(schema.properties.patches, undefined)
+  assert.equal(schema.properties.overlapCause, undefined)
+  assert.equal(schema.properties.preventiveActions, undefined)
+  assert.equal(schema.properties.patches?.minItems, 1)
+})
+
+// clean overlap 요청이 예방 조치 전용 schema를 사용하는지 확인
+test("sends clean overlap pair response schema to OpenAI", async () => {
+  const spy = fetchSpy(validOpenAiResponse())
+  const client = new OpenAiPredictionClient({
+    apiKey: "openai-key",
+    fetch: spy
+  })
+
+  await client.predict(cleanOverlapPairPrompt())
+
+  const body = JSON.parse(String(spy.requests[0]?.init.body)) as PairRequestBody
+  const schema = body.text.format.schema
+
+  assert.equal(body.text.format.name, "ai_prediction_pair_clean_overlap")
+  assert.equal(schema.additionalProperties, false)
+  assert.notEqual(schema.properties.overlapCause, undefined)
+  assert.notEqual(schema.properties.preventiveActions, undefined)
+  assert.equal(schema.properties.conflictCause, undefined)
+  assert.equal(schema.properties.patches, undefined)
+  assert.equal(schema.properties.preventiveActions?.minItems, 1)
+})
+
 // OpenAI HTTP 실패가 branch 단위 failed result로 격리될 수 있도록 Error로 노출되는지 확인
 test("throws when OpenAI request fails", async () => {
   const client = new OpenAiPredictionClient({
@@ -185,6 +229,20 @@ type FetchSpy = typeof fetch & {
   }>
 }
 
+type PairRequestBody = {
+  text: {
+    format: {
+      name: string
+      schema: {
+        additionalProperties: boolean
+        properties: Record<string, {
+          minItems?: number
+        } | undefined>
+      }
+    }
+  }
+}
+
 // network 호출 없이 OpenAI response와 HTTP 상태를 주입하는 fetch 대역
 function fetchSpy(
   body: unknown,
@@ -232,6 +290,22 @@ function batchPrompt(): AiPredictionPrompt {
     systemPrompt: "Return JSON only.",
     userPrompt: "{\"branches\":[{\"branch\":\"feature/a\"}]}",
     responseShape: "predictionBatch"
+  }
+}
+
+function confirmedConflictPairPrompt(): AiPredictionPrompt {
+  return {
+    systemPrompt: "Return confirmed conflict JSON only.",
+    userPrompt: "{\"pair\":{\"leftBranchName\":\"feature/a\",\"rightBranchName\":\"feature/b\"}}",
+    responseShape: "predictionPairConfirmedConflict"
+  }
+}
+
+function cleanOverlapPairPrompt(): AiPredictionPrompt {
+  return {
+    systemPrompt: "Return clean overlap JSON only.",
+    userPrompt: "{\"pair\":{\"leftBranchName\":\"feature/a\",\"rightBranchName\":\"feature/b\"}}",
+    responseShape: "predictionPairCleanOverlap"
   }
 }
 
