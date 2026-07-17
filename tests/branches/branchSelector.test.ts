@@ -1,10 +1,19 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { select, selectWithReasons } from "../../src/branches/branchSelector.js"
+import {
+  ACTIVE_BRANCH_WINDOW_DAYS,
+  select,
+  selectWithReasons
+} from "../../src/branches/branchSelector.js"
 import type { RepositoryBranch } from "../../src/branches/types.js"
 
 const dayMilliseconds = 24 * 60 * 60 * 1_000
 const currentTime = new Date()
+
+// report와 branch 선택이 같은 활성 기간 정책을 사용하는지 확인
+test("exports the active branch window policy", () => {
+  assert.equal(ACTIVE_BRANCH_WINDOW_DAYS, 14)
+})
 
 // base, default branch가 감시 대상에서 제외되는지 확인
 test("excludes base and default branches", () => {

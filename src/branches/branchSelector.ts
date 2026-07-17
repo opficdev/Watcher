@@ -7,7 +7,10 @@ import type {
   RepositoryBranch
 } from "./types.js"
 
-const activeBranchWindowMilliseconds = 14 * 24 * 60 * 60 * 1_000
+export const ACTIVE_BRANCH_WINDOW_DAYS = 14
+
+const activeBranchWindowMilliseconds =
+  ACTIVE_BRANCH_WINDOW_DAYS * 24 * 60 * 60 * 1_000
 const maximumActiveBranchCount = 30
 
 // 제외 사유가 필요 없는 호출자를 위해 선택된 BranchContext 목록만 반환

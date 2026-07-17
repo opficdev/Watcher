@@ -6,7 +6,10 @@ export function watcherRuntimeDescription(): string {
 }
 
 export { collectBranchContexts } from "./branches/branchCollector.js"
-export { select as selectWatchedBranches } from "./branches/branchSelector.js"
+export {
+  ACTIVE_BRANCH_WINDOW_DAYS,
+  select as selectWatchedBranches
+} from "./branches/branchSelector.js"
 export { build as buildAiPredictionEvidencePayload } from "./ai/evidenceBuilder.js"
 export {
   createDefaultAiPredictionClient,
@@ -46,6 +49,9 @@ export { collectGitMergeSignal } from "./git/gitMergeSignalCollector.js"
 export { send as sendMergeRiskReport } from "./reportChannels/reportChannel.js"
 export { analyze as analyzeBranchMergeRisks } from "./risks/riskAnalyzer.js"
 export { build as buildMergeRiskReport } from "./reports/reportBuilder.js"
+export {
+  build as buildBranchPairMergeRiskReport
+} from "./reports/branchPairReportBuilder.js"
 export { format as formatMergeRiskReportMarkdown } from "./reports/markdownFormatter.js"
 export { BranchRiskStatus } from "./risks/types.js"
 
@@ -96,7 +102,9 @@ export type {
   BranchContext,
   BranchCheckMetadata,
   BranchPullRequestMetadata,
+  BranchSelectionResult,
   BranchSelectionOptions,
+  ExcludedBranch,
   RepositoryBranch
 } from "./branches/types.js"
 
@@ -116,11 +124,14 @@ export {
 export type {
   GitMergeSignal,
   GitMergeSignalCollectionOptions,
-  GitMergeSignalStatus
+  GitMergeSignalStatus,
+  GitMergeTreePairResult
 } from "./git/types.js"
 
 export type {
   BranchChangedHunk,
+  BranchConflictGraph,
+  BranchConflictGraphEdge,
   BranchRisk,
   BranchRiskAnalysisInput,
   BranchRiskAnalysisOptions,
@@ -135,3 +146,14 @@ export type {
   MergeRiskReportOptions,
   MergeRiskReportSection
 } from "./reports/types.js"
+
+export type {
+  BranchPairMergeRiskReport,
+  BranchPairMergeRiskReportActivePeriod,
+  BranchPairMergeRiskReportAiAnalysis,
+  BranchPairMergeRiskReportBranchImpact,
+  BranchPairMergeRiskReportExcludedBranch,
+  BranchPairMergeRiskReportInput,
+  BranchPairMergeRiskReportMergeError,
+  BranchPairMergeRiskReportPairItem
+} from "./reports/branchPairTypes.js"
