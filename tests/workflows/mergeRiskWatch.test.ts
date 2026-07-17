@@ -158,6 +158,13 @@ test("writes merge risk debug artifacts", async () => {
         userPrompt?: string
       }
     }>(fixture.debugArtifactDir, "ai-prompt.json")
+    const aiResponseArtifact = await readJson<{
+      response?: {
+        predictions?: Array<{
+          prediction?: string
+        }>
+      }
+    }>(fixture.debugArtifactDir, "ai-response.json")
     const deterministicArtifact = await readJson<{
       risks?: Array<{
         branchName?: string
@@ -190,6 +197,10 @@ test("writes merge risk debug artifacts", async () => {
 
     assert.equal(openAiRequestCount, 1)
     assert.equal(aiPromptArtifact.prompt?.userPrompt, openAiUserPrompt)
+    assert.equal(
+      aiResponseArtifact.response?.predictions?.[0]?.prediction,
+      "critical file update needs review"
+    )
     assert.equal(runArtifact.repository, "opficdev/Watcher")
     assert.equal(runArtifact.baseBranch, "main")
     assert.equal(

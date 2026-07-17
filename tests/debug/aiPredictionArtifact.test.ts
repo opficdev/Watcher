@@ -1,7 +1,10 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
-import { sanitizeAiPredictionPromptDebugEvent } from "../../src/debug/aiPredictionArtifact.js"
+import {
+  sanitizeAiPredictionPromptDebugEvent,
+  sanitizeAiPredictionResponseDebugEvent
+} from "../../src/debug/aiPredictionArtifact.js"
 
 // AI prompt artifact가 코드 원문 대신 file과 line metadata를 기록하는지 확인
 test("replaces AI prompt code context with metadata", () => {
@@ -106,4 +109,57 @@ test("redacts non-JSON AI user prompt", () => {
   })
   assert.equal(event.prompt.userPrompt, userPrompt)
   assert.doesNotMatch(JSON.stringify(artifact), /consumer repository source/)
+})
+
+// AI response artifact가 제안 patch 원문 대신 크기와 hunk 범위를 기록하는지 확인
+test("replaces AI response patch with metadata", () => {
+  const patch = [
+    "--- a/Sources/Feature.swift",
+    "+++ b/Sources/Feature.swift",
+    "@@ -10,2 +10,2 @@",
+    "-let consumerSourceMarker = false",
+    "+let consumerSourceMarker = true",
+    "@@ -30 +30,3 @@ apply",
+    "-return value",
+    "+return value",
+    "+return result"
+  ].join("\n")
+  const artifact = sanitizeAiPredictionResponseDebugEvent({
+    targetBranches: [{
+      branchName: "feature/left",
+      baseBranch: "main"
+    }],
+    response: {
+      kind: "confirmed_conflict",
+      patches: [{
+        filePath: "Sources/Feature.swift",
+        patch,
+        reason: "충돌 상태 갱신"
+      }]
+    }
+  })
+  const response = artifact.response as {
+    patches?: Array<Record<string, unknown>>
+  }
+
+  assert.deepEqual(response.patches?.[0], {
+    filePath: "Sources/Feature.swift",
+    patch: {
+      byteLength: Buffer.byteLength(patch, "utf8"),
+      lineCount: 9,
+      hunkRanges: [{
+        oldStart: 10,
+        oldCount: 2,
+        newStart: 10,
+        newCount: 2
+      }, {
+        oldStart: 30,
+        oldCount: 1,
+        newStart: 30,
+        newCount: 3
+      }]
+    },
+    reason: "충돌 상태 갱신"
+  })
+  assert.doesNotMatch(JSON.stringify(artifact), /consumerSourceMarker/)
 })

@@ -12,6 +12,14 @@ type AiPredictionPromptDebugEventInput = {
   }
 }
 
+type AiPredictionResponseDebugEventInput = {
+  targetBranches: Array<{
+    branchName: string
+    baseBranch: string
+  }>
+  response: unknown
+}
+
 export type AiPredictionPromptDebugArtifact = {
   targetBranches: Array<{
     branchName: string
@@ -22,6 +30,14 @@ export type AiPredictionPromptDebugArtifact = {
     userPrompt: string
     responseShape?: string
   }
+}
+
+export type AiPredictionResponseDebugArtifact = {
+  targetBranches: Array<{
+    branchName: string
+    baseBranch: string
+  }>
+  response: unknown
 }
 
 // OpenAI에 전달된 prompt event에서 consumer repository 코드 원문만 metadata로 치환
@@ -40,6 +56,19 @@ export function sanitizeAiPredictionPromptDebugEvent(
         ? { responseShape: event.prompt.responseShape }
         : {})
     }
+  }
+}
+
+// provider response에서 제안 patch 원문만 크기와 hunk metadata로 치환
+export function sanitizeAiPredictionResponseDebugEvent(
+  event: AiPredictionResponseDebugEventInput
+): AiPredictionResponseDebugArtifact {
+  return {
+    targetBranches: event.targetBranches.map(target => ({
+      branchName: target.branchName,
+      baseBranch: target.baseBranch
+    })),
+    response: sanitizedResponseValueFor(event.response)
   }
 }
 
@@ -94,6 +123,79 @@ function contentMetadataFor(content: string, redacted = false): {
     contentHash: createHash("sha256").update(content, "utf8").digest("hex"),
     ...(redacted ? { redacted: true as const } : {})
   }
+}
+
+// 중첩된 provider response에서 patch 문자열만 metadata로 변환
+function sanitizedResponseValueFor(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sanitizedResponseValueFor)
+  }
+
+  if (!isJsonObject(value)) {
+    return value
+  }
+
+  return Object.fromEntries(Object.entries(value).map(([name, item]) => [
+    name,
+    name === "patch" && typeof item === "string"
+      ? patchMetadataFor(item)
+      : sanitizedResponseValueFor(item)
+  ]))
+}
+
+// unified diff 원문을 저장하지 않고 크기와 변경 범위만 추적할 metadata 구성
+function patchMetadataFor(patch: string): {
+  byteLength: number
+  lineCount: number
+  hunkRanges: Array<{
+    oldStart: number
+    oldCount: number
+    newStart: number
+    newCount: number
+  }>
+} {
+  return {
+    byteLength: Buffer.byteLength(patch, "utf8"),
+    lineCount: lineCountFor(patch),
+    hunkRanges: hunkRangesFor(patch)
+  }
+}
+
+// 마지막 줄바꿈은 별도 빈 줄로 세지 않고 patch 줄 수를 계산
+function lineCountFor(value: string): number {
+  if (value.length === 0) {
+    return 0
+  }
+
+  const lines = value.split(/\r\n|\n|\r/)
+  return lines[lines.length - 1] === "" ? lines.length - 1 : lines.length
+}
+
+// unified diff hunk header의 기존/변경 line 범위를 입력 순서대로 추출
+function hunkRangesFor(patch: string): Array<{
+  oldStart: number
+  oldCount: number
+  newStart: number
+  newCount: number
+}> {
+  const ranges: Array<{
+    oldStart: number
+    oldCount: number
+    newStart: number
+    newCount: number
+  }> = []
+  const pattern = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm
+
+  for (const match of patch.matchAll(pattern)) {
+    ranges.push({
+      oldStart: Number(match[1]),
+      oldCount: Number(match[2] ?? "1"),
+      newStart: Number(match[3]),
+      newCount: Number(match[4] ?? "1")
+    })
+  }
+
+  return ranges
 }
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
