@@ -79,6 +79,75 @@ export type AiPredictionPairEvidencePayload = {
   codeContext: AiPredictionPairCodeContext
 }
 
+// branch 조합을 반영할 merge 또는 rebase 작업 순서
+export type AiPredictionPairIntegrationOrder = {
+  strategy: "merge" | "rebase"
+  firstBranchName: string
+  secondBranchName: string
+  reason: string
+  steps: string[]
+}
+
+// 확정 conflict를 해결하기 위한 파일별 patch 제안
+export type AiPredictionPairPatch = {
+  filePath: string
+  patch: string
+  reason: string
+}
+
+// clean overlap 이후 동작 회귀를 예방하기 위한 확인 항목
+export type AiPredictionPairPreventiveAction = {
+  title: string
+  description: string
+  files: string[]
+}
+
+// 확정 conflict 원인과 구체적인 해결 patch
+export type AiConfirmedConflictResponse = {
+  kind: "confirmed_conflict"
+  pair: BranchComparisonPair
+  conflictCause: {
+    summary: string
+    files: string[]
+  }
+  integrationOrder: AiPredictionPairIntegrationOrder
+  patches: AiPredictionPairPatch[]
+}
+
+// 현재 merge 가능한 overlap의 예방 조치와 반영 순서
+export type AiCleanOverlapResponse = {
+  kind: "clean_overlap"
+  pair: BranchComparisonPair
+  overlapCause: {
+    summary: string
+    files: string[]
+  }
+  integrationOrder: AiPredictionPairIntegrationOrder
+  preventiveActions: AiPredictionPairPreventiveAction[]
+}
+
+// branch 조합의 deterministic merge 상태에 맞는 AI 응답
+export type AiPredictionPairResponse =
+  | AiConfirmedConflictResponse
+  | AiCleanOverlapResponse
+
+// branch 조합 하나에 대한 AI 실행 결과
+export type AiPredictionPairResult =
+  | AiPredictionPairPredictedResult
+  | AiPredictionPairFailedResult
+
+export type AiPredictionPairPredictedResult = {
+  status: "predicted"
+  pair: BranchComparisonPair
+  response: AiPredictionPairResponse
+}
+
+export type AiPredictionPairFailedResult = {
+  status: "failed"
+  pair: BranchComparisonPair
+  errorMessage: string
+}
+
 // AI provider에 전달할 system/user prompt 묶음
 export type AiPredictionPrompt = {
   systemPrompt: string
@@ -90,6 +159,8 @@ export type AiPredictionPrompt = {
 export type AiPredictionPromptResponseShape =
   | "prediction"
   | "predictionBatch"
+  | "predictionPairConfirmedConflict"
+  | "predictionPairCleanOverlap"
 
 // prompt 호출자가 provider나 실행 환경에 맞게 system prompt를 교체하기 위한 설정
 export type AiPredictionPromptBuildOptions = {
