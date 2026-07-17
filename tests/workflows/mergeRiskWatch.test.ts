@@ -196,7 +196,10 @@ test("writes merge risk debug artifacts", async () => {
     ))).join("\n")
 
     assert.equal(openAiRequestCount, 1)
-    assert.equal(aiPromptArtifact.prompt?.userPrompt, openAiUserPrompt)
+    assert.ok(openAiUserPrompt)
+    assert.ok(aiPromptArtifact.prompt)
+    assert.ok(aiPromptArtifact.prompt.userPrompt)
+    assert.equal(aiPromptArtifact.prompt.userPrompt, openAiUserPrompt)
     assert.equal(
       aiResponseArtifact.response?.predictions?.[0]?.prediction,
       "critical file update needs review"
