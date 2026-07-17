@@ -116,8 +116,14 @@ function pairFor(
   assertOnlyKeys(value, path, ["leftBranchName", "rightBranchName"])
 
   return {
-    leftBranchName: stringFor(value.leftBranchName, `${path}.leftBranchName`),
-    rightBranchName: stringFor(value.rightBranchName, `${path}.rightBranchName`)
+    leftBranchName: trimmedStringFor(
+      value.leftBranchName,
+      `${path}.leftBranchName`
+    ),
+    rightBranchName: trimmedStringFor(
+      value.rightBranchName,
+      `${path}.rightBranchName`
+    )
   }
 }
 
@@ -132,7 +138,7 @@ function causeFor(
 } {
   const value = objectFor(response, path)
   assertOnlyKeys(value, path, ["summary", "files"])
-  const files = nonEmptyStringArrayFor(value.files, `${path}.files`)
+  const files = nonEmptyTrimmedStringArrayFor(value.files, `${path}.files`)
   assertEvidenceFiles(files, `${path}.files`, evidenceFiles)
 
   return {
@@ -156,11 +162,11 @@ function integrationOrderFor(
     "steps"
   ])
   const strategy = strategyFor(value.strategy, `${path}.strategy`)
-  const firstBranchName = stringFor(
+  const firstBranchName = trimmedStringFor(
     value.firstBranchName,
     `${path}.firstBranchName`
   )
-  const secondBranchName = stringFor(
+  const secondBranchName = trimmedStringFor(
     value.secondBranchName,
     `${path}.secondBranchName`
   )
@@ -183,7 +189,7 @@ function patchFor(
 ): AiPredictionPairPatch {
   const value = objectFor(response, path)
   assertOnlyKeys(value, path, ["filePath", "patch", "reason"])
-  const filePath = stringFor(value.filePath, `${path}.filePath`)
+  const filePath = trimmedStringFor(value.filePath, `${path}.filePath`)
   assertEvidenceFiles([filePath], `${path}.filePath`, evidenceFiles)
 
   return {
@@ -201,7 +207,7 @@ function preventiveActionFor(
 ): AiPredictionPairPreventiveAction {
   const value = objectFor(response, path)
   assertOnlyKeys(value, path, ["title", "description", "files"])
-  const files = nonEmptyStringArrayFor(value.files, `${path}.files`)
+  const files = nonEmptyTrimmedStringArrayFor(value.files, `${path}.files`)
   assertEvidenceFiles(files, `${path}.files`, evidenceFiles)
 
   return {
@@ -336,6 +342,15 @@ function nonEmptyStringArrayFor(
     .map((item, index) => stringFor(item, `${path}[${index}]`))
 }
 
+// branch 이름과 evidence 파일 경로의 불필요한 양끝 공백 제거
+function nonEmptyTrimmedStringArrayFor(
+  value: unknown,
+  path: string
+): string[] {
+  return nonEmptyArrayFor(value, path)
+    .map((item, index) => trimmedStringFor(item, `${path}[${index}]`))
+}
+
 // unknown 값이 비어 있지 않은 문자열인지 검증
 function stringFor(
   value: unknown,
@@ -348,6 +363,14 @@ function stringFor(
   }
 
   return value
+}
+
+// 식별자 비교 전에 provider가 추가한 양끝 공백 제거
+function trimmedStringFor(
+  value: unknown,
+  path: string
+): string {
+  return stringFor(value, path).trim()
 }
 
 // 응답 상태 문자열이 요청한 상태와 같은지 검증
