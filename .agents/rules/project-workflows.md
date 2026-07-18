@@ -56,6 +56,7 @@ This reference holds Watcher-specific working rules that should live with the pr
 
 - Commit messages must start with a prefix such as `feat`, `fix`, `refactor`, or `chore`.
 - Write commit message prose in Korean.
+- 커밋 메시지의 한국어 설명은 서술형 종결어미를 사용하지 않고 `구성`, `추가`, `수정`, `정리` 같은 명사형으로 끝낸다.
 - Keep implementation names, file paths, commands, branch names, workflow names, issue numbers, and commit hashes in their original form.
 - Do not write a commit message body.
 - Commit only files related to the current change.

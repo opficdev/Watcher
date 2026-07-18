@@ -4,8 +4,10 @@ import {
   type ReportChannelOptions,
   type ReportChannelResult
 } from "./types.js"
-
-const DISCORD_CONTENT_LIMIT = 2000
+import {
+  splitDiscordMessages,
+  type DiscordMessage
+} from "./discordMessageSplitter.js"
 
 // Discord webhook URL이 있으면 Discord channel로 보내고 없으면 stdout으로 fallback
 export async function send(
@@ -62,85 +64,48 @@ async function sendDiscord(
   const fetcher = options.fetch ?? fetch
   const messages = splitDiscordMessages(markdown)
 
-  try {
-    for (const message of messages) {
+  for (const message of messages) {
+    try {
       const response = await fetcher(webhookUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ content: message })
+        body: JSON.stringify({ content: message.content })
       })
 
       if (!response.ok) {
         return {
           ok: false,
           target: "discord",
-          errorMessage: `Discord webhook request failed with status ${response.status}`
+          errorMessage: `${failureLocationFor(message)} failed with status ${response.status}`
         }
       }
+    } catch (error) {
+      return {
+        ok: false,
+        target: "discord",
+        errorMessage: `${failureLocationFor(message)} failed: ${
+          redactedErrorMessageFor(error, webhookUrl)
+        }`
+      }
     }
+  }
 
-    return {
-      ok: true,
-      target: "discord",
-      messageCount: messages.length
-    }
-  } catch (error) {
-    return {
-      ok: false,
-      target: "discord",
-      errorMessage: redactedErrorMessageFor(error, webhookUrl)
-    }
+  return {
+    ok: true,
+    target: "discord",
+    messageCount: messages.length
   }
 }
 
-// Discord content 최대 길이를 넘는 report를 줄 단위로 최대한 보존하며 분할
-function splitDiscordMessages(markdown: string): string[] {
-  if (markdown.length <= DISCORD_CONTENT_LIMIT) {
-    return [markdown]
+// 실패한 Discord request를 branch 조합 또는 report 조각 위치로 표시
+function failureLocationFor(message: DiscordMessage): string {
+  if (message.pairLabel) {
+    return `Discord webhook request for pair ${message.pairLabel} fragment ${message.fragmentNumber}`
   }
 
-  const messages: string[] = []
-  let current = ""
-
-  for (const line of markdown.split("\n")) {
-    const next = current.length === 0 ? line : `${current}\n${line}`
-
-    if (next.length <= DISCORD_CONTENT_LIMIT) {
-      current = next
-      continue
-    }
-
-    if (current.length) {
-      messages.push(current)
-    }
-
-    if (line.length <= DISCORD_CONTENT_LIMIT) {
-      current = line
-      continue
-    }
-
-    messages.push(...chunksFor(line))
-    current = ""
-  }
-
-  if (current.length) {
-    messages.push(current)
-  }
-
-  return messages
-}
-
-// 한 줄 자체가 Discord 제한보다 길면 고정 길이 chunk로 분리
-function chunksFor(value: string): string[] {
-  const chunks: string[] = []
-
-  for (let index = 0; index < value.length; index += DISCORD_CONTENT_LIMIT) {
-    chunks.push(value.slice(index, index + DISCORD_CONTENT_LIMIT))
-  }
-
-  return chunks
+  return `Discord webhook request for report fragment ${message.fragmentNumber}`
 }
 
 // unknown error를 report 가능한 문자열로 변환

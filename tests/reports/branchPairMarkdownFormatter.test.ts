@@ -8,6 +8,9 @@ import {
   type BranchPairMergeRiskReport,
   type BranchPairMergeRiskReportPairItem
 } from "../../src/index.js"
+import {
+  splitDiscordMessages
+} from "../../src/reportChannels/discordMessageSplitter.js"
 
 // 활성 기간과 branch 및 조합 수를 Summary에 표시
 test("formats branch pair report summary", () => {
@@ -48,6 +51,52 @@ test("formats confirmed conflict details and suggested patch", () => {
   assert.match(markdown, /- `src\/a\.ts`: 두 변경 의도를 보존함/)
   assert.match(markdown, /```diff\n\s*@@ -1 \+1 @@\n\s*-old\n\s*\+new\n\s*```/)
   assert.equal(markdown.match(/#### `feature\/a` ↔ `main`/g)?.length, 1)
+})
+
+// formatter의 실제 Markdown 구조를 Discord message splitter가 같은 계약으로 해석하는지 확인
+test("formats report compatible with discord message splitting", () => {
+  const value = report()
+  const analysis = value.confirmedConflicts[0]?.aiAnalysis
+
+  if (analysis?.status !== "predicted" || analysis.response.kind !== "confirmed_conflict") {
+    assert.fail("Expected predicted confirmed conflict analysis")
+  }
+
+  analysis.response.patches = [{
+    ...analysis.response.patches[0]!,
+    patch: Array.from({ length: 300 }, (_, index) =>
+      `+const value${index.toString()} = "${"x".repeat(24)}"`
+    ).join("\n")
+  }]
+
+  const markdown = formatBranchPairMergeRiskReportMarkdown(value)
+  const messages = splitDiscordMessages(markdown)
+  const pairLabel = "`feature/a` ↔ `main`"
+  const pairMessages = messages.filter(message => message.pairLabel === pairLabel)
+  const patchMessages = pairMessages.filter(message =>
+    message.content.includes("- Suggested Patch (")
+  )
+
+  assert.match(messages[0]?.content ?? "", /### Summary/)
+  assert.equal(
+    pairMessages.some(message =>
+      message.content.startsWith(`#### ${pairLabel}\n- AI Analysis:`)
+    ),
+    true
+  )
+  assert.equal(
+    pairMessages.some(message =>
+      message.content.startsWith(`#### ${pairLabel}\n- Recommended Resolution:`)
+    ),
+    true
+  )
+  assert.equal(1 < patchMessages.length, true)
+  assert.equal(patchMessages.every(message => message.content.endsWith("    ```")), true)
+  assert.deepEqual(
+    pairMessages.map(message => message.fragmentNumber),
+    pairMessages.map((_, index) => index + 1)
+  )
+  assert.equal(messages.every(message => message.content.length <= 2000), true)
 })
 
 // 잠재 위험의 AI 해결 순서와 예방 조치를 표시
