@@ -140,6 +140,95 @@ test("splits long discord report into multiple messages", async () => {
   assert.equal(fetcher.requests[1]?.body.content.length, 1)
 })
 
+// report section과 branch 조합을 원래 순서대로 모두 Discord에 전송하는지 확인
+test("sends report sections and branch pairs in source order", async () => {
+  const fetcher = fetchSpy({})
+  const result = await sendMergeRiskReport({
+    markdown: [
+      "## Merge Risk Report",
+      "",
+      "### Summary",
+      "- watched branches: 2",
+      "",
+      "### Confirmed Conflicts",
+      "",
+      "#### `feature/a` ↔ `main`",
+      "- status: `confirmed_conflict`",
+      "",
+      "#### `feature/b` ↔ `main`",
+      "- status: `confirmed_conflict`",
+      "",
+      "### Branch Impact",
+      "",
+      "- `feature/a`",
+      "",
+      "### Excluded Branches",
+      "",
+      "- `feature/old`: `stale_branch`",
+      "",
+      "### Merge Errors",
+      "",
+      "없음"
+    ].join("\n")
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    fetch: fetcher
+  })
+
+  assert.deepEqual(result, {
+    ok: true,
+    target: "discord",
+    messageCount: 6
+  })
+  assert.match(fetcher.requests[0]?.body.content ?? "", /### Summary/)
+  assert.match(fetcher.requests[1]?.body.content ?? "", /`feature\/a` ↔ `main`/)
+  assert.match(fetcher.requests[2]?.body.content ?? "", /`feature\/b` ↔ `main`/)
+  assert.match(fetcher.requests[3]?.body.content ?? "", /### Branch Impact/)
+  assert.match(fetcher.requests[4]?.body.content ?? "", /### Excluded Branches/)
+  assert.match(fetcher.requests[5]?.body.content ?? "", /### Merge Errors/)
+})
+
+// 이전 Discord request가 끝난 뒤에만 다음 message 전송을 시작하는지 확인
+test("waits for each discord request before sending the next message", async () => {
+  const fetcher = new DeferredFetchSpy()
+  const result = sendMergeRiskReport({
+    markdown: [
+      "## Merge Risk Report",
+      "",
+      "### Summary",
+      "- watched branches: 2",
+      "",
+      "### Confirmed Conflicts",
+      "",
+      "#### `feature/a` ↔ `main`",
+      "- status: `confirmed_conflict`",
+      "",
+      "#### `feature/b` ↔ `main`",
+      "- status: `confirmed_conflict`"
+    ].join("\n")
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    fetch: fetcher.fetch
+  })
+
+  assert.equal(fetcher.requests.length, 1)
+
+  fetcher.resolveNext()
+  await nextEventLoopTurn()
+  assert.equal(fetcher.requests.length, 2)
+
+  fetcher.resolveNext()
+  await nextEventLoopTurn()
+  assert.equal(fetcher.requests.length, 3)
+
+  fetcher.resolveNext()
+  assert.deepEqual(await result, {
+    ok: true,
+    target: "discord",
+    messageCount: 3
+  })
+})
+
 class StdoutSpy {
   output = ""
 
@@ -190,4 +279,31 @@ function failingFetch(message: string): typeof fetch {
   return (async (): Promise<Response> => {
     throw new Error(message)
   }) as typeof fetch
+}
+
+class DeferredFetchSpy {
+  readonly requests: Request[] = []
+  private readonly resolvers: Array<(response: Response) => void> = []
+
+  readonly fetch = (async (
+    input: string | URL | Request,
+    init?: RequestInit
+  ): Promise<Response> => {
+    this.requests.push(new Request(input, init))
+
+    return new Promise(resolve => {
+      this.resolvers.push(resolve)
+    })
+  }) as typeof fetch
+
+  resolveNext(): void {
+    this.resolvers.shift()?.({
+      ok: true,
+      status: 204
+    } as Response)
+  }
+}
+
+function nextEventLoopTurn(): Promise<void> {
+  return new Promise(resolve => setImmediate(resolve))
 }
