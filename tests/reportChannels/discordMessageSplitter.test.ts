@@ -202,3 +202,246 @@ test("repeats the pair heading for continued AI fragments", () => {
     pairMessages.map((_, index) => index + 1)
   )
 })
+
+// 긴 Suggested Patch에 순번을 붙이고 모든 message의 fence를 닫는지 확인
+test("numbers long suggested patch fragments and closes every code fence", () => {
+  const patchLines = Array.from({ length: 500 }, (_, index) =>
+    `    +const value${index.toString()} = "${"x".repeat(24)}"`
+  )
+  const messages = splitDiscordMessages(suggestedPatchReportFor([
+    {
+      descriptionLine: "  - `src/a.ts`: resolve conflict",
+      openingFenceLine: "    ```diff",
+      patchLines,
+      closingFenceLine: "    ```"
+    }
+  ]))
+  const patches = messages.filter(message =>
+    message.content.includes("Suggested Patch (")
+  )
+
+  assert.equal(9 < patches.length, true)
+  assert.equal(patches.every(message => message.content.length <= 2000), true)
+  assert.deepEqual(
+    patches.map(message =>
+      message.content.match(/Suggested Patch \((\d+)\/(\d+)\)/)?.[1]
+    ),
+    patches.map((_, index) => (index + 1).toString())
+  )
+  assert.equal(
+    patches.every(message =>
+      message.content.match(/Suggested Patch \(\d+\/(\d+)\)/)?.[1] ===
+        patches.length.toString()
+    ),
+    true
+  )
+  assert.equal(
+    patches.every(message => hasClosedPatchFence(message.content)),
+    true
+  )
+  assert.deepEqual(
+    patches.flatMap(message => patchBodyLinesFor(message.content)),
+    patchLines
+  )
+})
+
+// Suggested Patch block이 정확히 2,000자면 유지하고 2,001자면 분할하는지 확인
+test("splits suggested patch only after the 2000 character boundary", () => {
+  const exactMarkdown = suggestedPatchReportWithBlockLength(2000)
+  const overflowMarkdown = suggestedPatchReportWithBlockLength(2001)
+  const exactMessages = splitDiscordMessages(exactMarkdown)
+    .filter(message => message.content.includes("Suggested Patch"))
+  const overflowMessages = splitDiscordMessages(overflowMarkdown)
+    .filter(message => message.content.includes("Suggested Patch"))
+
+  assert.equal(exactMessages.length, 1)
+  assert.equal(exactMessages[0]?.content.length, 2000)
+  assert.match(exactMessages[0]?.content ?? "", /- Suggested Patch:/)
+  assert.doesNotMatch(exactMessages[0]?.content ?? "", /Suggested Patch \(/)
+  assert.equal(overflowMessages.length, 2)
+  assert.deepEqual(
+    overflowMessages.map(message =>
+      message.content.match(/Suggested Patch \((\d+)\/2\)/)?.[1]
+    ),
+    ["1", "2"]
+  )
+  assert.equal(
+    overflowMessages.every(message => message.content.length <= 2000),
+    true
+  )
+  assert.equal(
+    overflowMessages.reduce(
+      (count, message) => count + (message.content.match(/x/g) ?? []).length,
+      0
+    ),
+    (overflowMarkdown.match(/x/g) ?? []).length
+  )
+})
+
+// 여러 file patch와 formatter가 선택한 긴 fence를 원래 순서대로 유지하는지 확인
+test("keeps multiple patch files and custom fences before the next pair", () => {
+  const firstPatchLines = Array.from({ length: 90 }, (_, index) =>
+    `    +const first${index.toString()} = "${"a".repeat(20)}"`
+  )
+  const secondPatchLines = [
+    "    ```diff",
+    ...Array.from({ length: 90 }, (_, index) =>
+      `    +const second${index.toString()} = "${"b".repeat(20)}"`
+    ),
+    "    ```"
+  ]
+  const markdown = [
+    suggestedPatchReportFor([
+      {
+        descriptionLine: "  - `src/a.ts`: keep first change",
+        openingFenceLine: "    ```diff",
+        patchLines: firstPatchLines,
+        closingFenceLine: "    ```"
+      },
+      {
+        descriptionLine: "  - `src/b.ts`: keep embedded fence",
+        openingFenceLine: "    ````diff",
+        patchLines: secondPatchLines,
+        closingFenceLine: "    ````"
+      }
+    ]),
+    "",
+    "#### `feature/b` ↔ `main`",
+    "- status: `confirmed_conflict`"
+  ].join("\n")
+  const messages = splitDiscordMessages(markdown)
+  const patches = messages.filter(message =>
+    message.content.includes("Suggested Patch (")
+  )
+  const descriptions = patches.map(message =>
+    message.content.split("\n").find(line => line.startsWith("  - `src/"))
+  )
+  const secondPatchMessages = patches.filter(message =>
+    message.content.includes("`src/b.ts`")
+  )
+  const nextPairIndex = messages.findIndex(message =>
+    message.content.includes("#### `feature/b` ↔ `main`")
+  )
+  const lastPatchIndex = messages.map(message =>
+    message.content.includes("Suggested Patch (")
+  ).lastIndexOf(true)
+
+  assert.equal(descriptions.includes("  - `src/a.ts`: keep first change"), true)
+  assert.equal(descriptions.includes("  - `src/b.ts`: keep embedded fence"), true)
+  assert.equal(
+    descriptions.map(line => line?.includes("src/a.ts") ?? false).lastIndexOf(true) <
+      descriptions.findIndex(line => line?.includes("src/b.ts")),
+    true
+  )
+  assert.equal(
+    secondPatchMessages.every(message =>
+      message.content.includes("    ````diff") &&
+      message.content.endsWith("    ````")
+    ),
+    true
+  )
+  assert.equal(lastPatchIndex < nextPairIndex, true)
+})
+
+// 완결되지 않은 patch 구조는 순번 재구성 없이 기존 길이 분할로 처리하는지 확인
+test("falls back to generic splitting for an incomplete suggested patch", () => {
+  const markdown = [
+    "## Merge Risk Report",
+    "",
+    "### Summary",
+    "- watched branches: 1",
+    "",
+    "### Confirmed Conflicts",
+    "",
+    "#### `feature/a` ↔ `main`",
+    "- Suggested Patch:",
+    "  - `src/a.ts`: missing closing fence",
+    "    ```diff",
+    `    +${"z".repeat(2500)}`
+  ].join("\n")
+  const messages = splitDiscordMessages(markdown)
+  const pairMessages = messages.filter(message => message.pairLabel)
+
+  assert.equal(
+    pairMessages.some(message => message.content.includes("Suggested Patch (")),
+    false
+  )
+  assert.equal(pairMessages.every(message => message.content.length <= 2000), true)
+  assert.equal(
+    pairMessages.reduce(
+      (count, message) => count + (message.content.match(/z/g) ?? []).length,
+      0
+    ),
+    2500
+  )
+})
+
+type PatchInput = {
+  descriptionLine: string
+  openingFenceLine: string
+  patchLines: string[]
+  closingFenceLine: string
+}
+
+function suggestedPatchReportFor(patches: PatchInput[]): string {
+  return [
+    "## Merge Risk Report",
+    "",
+    "### Summary",
+    "- watched branches: 1",
+    "",
+    "### Confirmed Conflicts",
+    "",
+    "#### `feature/a` ↔ `main`",
+    "- Suggested Patch:",
+    ...patches.flatMap(patch => [
+      patch.descriptionLine,
+      patch.openingFenceLine,
+      ...patch.patchLines,
+      patch.closingFenceLine
+    ])
+  ].join("\n")
+}
+
+function suggestedPatchReportWithBlockLength(length: number): string {
+  const lines = [
+    "#### `feature/a` ↔ `main`",
+    "- Suggested Patch:",
+    "  - `src/a.ts`: boundary",
+    "    ```diff",
+    "",
+    "    ```"
+  ]
+  const fixedLength = lines.join("\n").length
+  const patchLinePrefix = "    +"
+  lines[4] = `${patchLinePrefix}${"x".repeat(
+    length - fixedLength - patchLinePrefix.length
+  )}`
+
+  return [
+    "## Merge Risk Report",
+    "",
+    "### Summary",
+    "- watched branches: 1",
+    "",
+    "### Confirmed Conflicts",
+    "",
+    ...lines
+  ].join("\n")
+}
+
+function hasClosedPatchFence(content: string): boolean {
+  const lines = content.split("\n")
+  const openingFenceIndex = lines.findIndex(line => /^    `{3,}diff$/.test(line))
+  const openingFence = lines[openingFenceIndex]?.slice(4, -4)
+
+  return openingFenceIndex >= 0 &&
+    lines.at(-1) === `    ${openingFence ?? ""}`
+}
+
+function patchBodyLinesFor(content: string): string[] {
+  const lines = content.split("\n")
+  const openingFenceIndex = lines.findIndex(line => /^    `{3,}diff$/.test(line))
+
+  return lines.slice(openingFenceIndex + 1, -1)
+}

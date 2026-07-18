@@ -140,6 +140,51 @@ test("splits long discord report into multiple messages", async () => {
   assert.equal(fetcher.requests[1]?.body.content.length, 1)
 })
 
+// 긴 Suggested Patch request마다 길이 제한과 닫힌 code fence를 유지하는지 확인
+test("sends long suggested patch in bounded closed-fence requests", async () => {
+  const fetcher = fetchSpy({})
+  const patchLines = Array.from({ length: 300 }, (_, index) =>
+    `    +const value${index.toString()} = "${"x".repeat(24)}"`
+  )
+  const result = await sendMergeRiskReport({
+    markdown: [
+      "## Merge Risk Report",
+      "",
+      "### Summary",
+      "- watched branches: 1",
+      "",
+      "### Confirmed Conflicts",
+      "",
+      "#### `feature/a` ↔ `main`",
+      "- Suggested Patch:",
+      "  - `src/a.ts`: resolve conflict",
+      "    ```diff",
+      ...patchLines,
+      "    ```"
+    ].join("\n")
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    fetch: fetcher
+  })
+  const patchRequests = fetcher.requests.filter(request =>
+    request.body.content.includes("Suggested Patch (")
+  )
+
+  assert.equal(result.ok, true)
+  assert.equal(1 < patchRequests.length, true)
+  assert.equal(
+    fetcher.requests.every(request => request.body.content.length <= 2000),
+    true
+  )
+  assert.equal(
+    patchRequests.every(request => {
+      const lines = request.body.content.split("\n")
+      return lines.includes("    ```diff") && lines.at(-1) === "    ```"
+    }),
+    true
+  )
+})
+
 // report section과 branch 조합을 원래 순서대로 모두 Discord에 전송하는지 확인
 test("sends report sections and branch pairs in source order", async () => {
   const fetcher = fetchSpy({})
