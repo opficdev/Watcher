@@ -2,6 +2,8 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
 import {
+  sanitizeAiPredictionPairPromptDebugEvent,
+  sanitizeAiPredictionPairResponseDebugEvent,
   sanitizeAiPredictionPromptDebugEvent,
   sanitizeAiPredictionResponseDebugEvent
 } from "../../src/debug/aiPredictionArtifact.js"
@@ -162,4 +164,86 @@ test("replaces AI response patch with metadata", () => {
     reason: "충돌 상태 갱신"
   })
   assert.doesNotMatch(JSON.stringify(artifact), /consumerSourceMarker/)
+})
+
+// pair prompt artifact에서 ordered targetPair를 유지하고 코드 원문을 제거
+test("sanitizes pair AI prompt debug event", () => {
+  const content = "const pairSourceMarker = true\n"
+  const event = {
+    targetPair: {
+      leftBranchName: "feature/left",
+      rightBranchName: "feature/right"
+    },
+    prompt: {
+      systemPrompt: "Review branch pair",
+      userPrompt: JSON.stringify({
+        snippet: {
+          filePath: "Sources/Pair.swift",
+          content,
+          startLine: 7,
+          endLine: 7
+        }
+      }),
+      responseShape: "predictionPairCleanOverlap"
+    }
+  }
+
+  const artifact = sanitizeAiPredictionPairPromptDebugEvent(event)
+  const payload = JSON.parse(artifact.prompt.userPrompt) as {
+    snippet?: Record<string, unknown>
+  }
+
+  assert.deepEqual(artifact.targetPair, event.targetPair)
+  assert.deepEqual(payload.snippet, {
+    filePath: "Sources/Pair.swift",
+    startLine: 7,
+    endLine: 7,
+    contentByteLength: Buffer.byteLength(content, "utf8"),
+    contentHash: createHash("sha256").update(content, "utf8").digest("hex"),
+    lineCount: 1
+  })
+  assert.doesNotMatch(JSON.stringify(artifact), /pairSourceMarker/)
+  assert.equal(JSON.parse(event.prompt.userPrompt).snippet.content, content)
+})
+
+// pair response artifact에서 ordered targetPair를 유지하고 patch 원문을 제거
+test("sanitizes pair AI response debug event", () => {
+  const patch = "@@ -1 +1 @@\n-let pairSourceMarker = false\n+let pairSourceMarker = true"
+  const event = {
+    targetPair: {
+      leftBranchName: "feature/left",
+      rightBranchName: "feature/right"
+    },
+    response: {
+      kind: "confirmed_conflict",
+      patches: [{
+        filePath: "Sources/Pair.swift",
+        patch,
+        reason: "충돌 상태 갱신"
+      }]
+    }
+  }
+
+  const artifact = sanitizeAiPredictionPairResponseDebugEvent(event)
+  const response = artifact.response as {
+    patches?: Array<Record<string, unknown>>
+  }
+
+  assert.deepEqual(artifact.targetPair, event.targetPair)
+  assert.deepEqual(response.patches?.[0], {
+    filePath: "Sources/Pair.swift",
+    patch: {
+      byteLength: Buffer.byteLength(patch, "utf8"),
+      lineCount: 3,
+      hunkRanges: [{
+        oldStart: 1,
+        oldCount: 1,
+        newStart: 1,
+        newCount: 1
+      }]
+    },
+    reason: "충돌 상태 갱신"
+  })
+  assert.doesNotMatch(JSON.stringify(artifact), /pairSourceMarker/)
+  assert.equal(event.response.patches[0]?.patch, patch)
 })

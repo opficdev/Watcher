@@ -20,6 +20,26 @@ type AiPredictionResponseDebugEventInput = {
   response: unknown
 }
 
+type AiPredictionPairPromptDebugEventInput = {
+  targetPair: {
+    leftBranchName: string
+    rightBranchName: string
+  }
+  prompt: {
+    systemPrompt: string
+    userPrompt: string
+    responseShape?: string
+  }
+}
+
+type AiPredictionPairResponseDebugEventInput = {
+  targetPair: {
+    leftBranchName: string
+    rightBranchName: string
+  }
+  response: unknown
+}
+
 export type AiPredictionPromptDebugArtifact = {
   targetBranches: Array<{
     branchName: string
@@ -37,6 +57,26 @@ export type AiPredictionResponseDebugArtifact = {
     branchName: string
     baseBranch: string
   }>
+  response: unknown
+}
+
+export type AiPredictionPairPromptDebugArtifact = {
+  targetPair: {
+    leftBranchName: string
+    rightBranchName: string
+  }
+  prompt: {
+    systemPrompt: string
+    userPrompt: string
+    responseShape?: string
+  }
+}
+
+export type AiPredictionPairResponseDebugArtifact = {
+  targetPair: {
+    leftBranchName: string
+    rightBranchName: string
+  }
   response: unknown
 }
 
@@ -68,6 +108,38 @@ export function sanitizeAiPredictionResponseDebugEvent(
       branchName: target.branchName,
       baseBranch: target.baseBranch
     })),
+    response: sanitizedResponseValueFor(event.response)
+  }
+}
+
+// pair prompt event의 ordered targetPair를 유지하고 코드 원문을 metadata로 치환
+export function sanitizeAiPredictionPairPromptDebugEvent(
+  event: AiPredictionPairPromptDebugEventInput
+): AiPredictionPairPromptDebugArtifact {
+  return {
+    targetPair: {
+      leftBranchName: event.targetPair.leftBranchName,
+      rightBranchName: event.targetPair.rightBranchName
+    },
+    prompt: {
+      systemPrompt: event.prompt.systemPrompt,
+      userPrompt: sanitizedUserPromptFor(event.prompt.userPrompt),
+      ...(event.prompt.responseShape
+        ? { responseShape: event.prompt.responseShape }
+        : {})
+    }
+  }
+}
+
+// pair response event의 ordered targetPair를 유지하고 patch 원문을 metadata로 치환
+export function sanitizeAiPredictionPairResponseDebugEvent(
+  event: AiPredictionPairResponseDebugEventInput
+): AiPredictionPairResponseDebugArtifact {
+  return {
+    targetPair: {
+      leftBranchName: event.targetPair.leftBranchName,
+      rightBranchName: event.targetPair.rightBranchName
+    },
     response: sanitizedResponseValueFor(event.response)
   }
 }

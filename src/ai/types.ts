@@ -148,6 +148,31 @@ export type AiPredictionPairFailedResult = {
   errorMessage: string
 }
 
+// branch 조합 prompt 생성 시점의 ordered pair와 prompt 정보
+export type AiPredictionPairPromptDebugEvent = {
+  targetPair: BranchComparisonPair
+  prompt: AiPredictionPrompt
+}
+
+// branch 조합 provider response 수신 시점의 ordered pair와 원본 응답
+export type AiPredictionPairResponseDebugEvent = {
+  targetPair: BranchComparisonPair
+  response: unknown
+}
+
+// branch 조합 provider 호출 또는 응답 검증 실패 정보
+export type AiPredictionPairFailureDebugEvent = {
+  targetPair: BranchComparisonPair
+  errorMessage: string
+}
+
+// branch 조합 AI 실행 단계별 debug event를 받는 observer
+export type AiPredictionPairDebugObserver = {
+  onPromptBuilt?(event: AiPredictionPairPromptDebugEvent): void | Promise<void>
+  onResponseReceived?(event: AiPredictionPairResponseDebugEvent): void | Promise<void>
+  onPredictionFailed?(event: AiPredictionPairFailureDebugEvent): void | Promise<void>
+}
+
 // AI provider에 전달할 system/user prompt 묶음
 export type AiPredictionPrompt = {
   systemPrompt: string
@@ -165,6 +190,11 @@ export type AiPredictionPromptResponseShape =
 // prompt 호출자가 provider나 실행 환경에 맞게 system prompt를 교체하기 위한 설정
 export type AiPredictionPromptBuildOptions = {
   systemPrompt?: string
+}
+
+// branch 조합 prompt와 debug observer를 함께 조정하기 위한 실행 설정
+export type AiPredictionPairRunOptions = AiPredictionPromptBuildOptions & {
+  debugObserver?: AiPredictionPairDebugObserver
 }
 
 // provider별 AI 호출 구현이 맞춰야 하는 최소 interface

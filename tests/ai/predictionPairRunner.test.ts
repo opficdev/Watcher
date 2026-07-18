@@ -6,6 +6,10 @@ import {
   type AiConfirmedConflictResponse,
   type AiPredictionClient,
   type AiPredictionPairEvidencePayload,
+  type AiPredictionPairDebugObserver,
+  type AiPredictionPairFailureDebugEvent,
+  type AiPredictionPairPromptDebugEvent,
+  type AiPredictionPairResponseDebugEvent,
   type AiPredictionPairTargetStatus,
   type AiPredictionPrompt,
   type BranchComparisonPair
@@ -88,6 +92,101 @@ test("returns failed result for every pair when provider is unavailable", async 
   assert.deepEqual(results.map(result => result.status), ["failed", "failed"])
   assert.equal(client.prompts.length, 2)
 })
+
+// pair별 prompt와 response를 ordered targetPair metadata와 함께 통지
+test("notifies pair debug observer with prompt and response", async () => {
+  const input = payload("feature/a", "feature/b", "potential_overlap")
+  const observer = new AiPredictionPairDebugObserverSpy()
+
+  const results = await predictBranchPairsWithAi(
+    [input],
+    new AiPredictionClientSpy(),
+    { debugObserver: observer }
+  )
+
+  assert.equal(results[0]?.status, "predicted")
+  assert.deepEqual(observer.promptEvents.map(event => event.targetPair), [input.pair])
+  assert.deepEqual(observer.responseEvents.map(event => event.targetPair), [input.pair])
+  assert.equal(observer.promptEvents[0]?.prompt.responseShape, "predictionPairCleanOverlap")
+  assert.deepEqual(observer.responseEvents[0]?.response, cleanOverlapResponse(input.pair))
+  assert.deepEqual(observer.failureEvents, [])
+})
+
+// provider와 response validation 실패를 pair별 failure event로 통지
+test("notifies pair debug observer when prediction fails", async () => {
+  const providerInput = payload("feature/a", "feature/b", "potential_overlap")
+  const validationInput = payload("feature/c", "feature/d", "confirmed_conflict")
+  const observer = new AiPredictionPairDebugObserverSpy()
+  const client = new AiPredictionClientSpy([
+    new Error("provider failed"),
+    cleanOverlapResponse(validationInput.pair)
+  ])
+
+  const results = await predictBranchPairsWithAi(
+    [providerInput, validationInput],
+    client,
+    { debugObserver: observer }
+  )
+
+  assert.deepEqual(results.map(result => result.status), ["failed", "failed"])
+  assert.deepEqual(observer.failureEvents.map(event => event.targetPair), [
+    providerInput.pair,
+    validationInput.pair
+  ])
+  assert.match(observer.failureEvents[0]?.errorMessage ?? "", /provider failed/)
+  assert.match(
+    observer.failureEvents[1]?.errorMessage ?? "",
+    /must be confirmed_conflict/
+  )
+})
+
+// debug observer 실패가 provider 결과와 다음 pair 실행을 중단하지 않도록 격리
+test("continues pair prediction when debug observer throws", async () => {
+  const inputs = [
+    payload("feature/a", "feature/b", "potential_overlap"),
+    payload("feature/c", "feature/d", "confirmed_conflict")
+  ]
+  const observer: AiPredictionPairDebugObserver = {
+    onPromptBuilt: () => {
+      throw new Error("prompt observer failed")
+    },
+    onResponseReceived: () => {
+      throw new Error("response observer failed")
+    },
+    onPredictionFailed: () => {
+      throw new Error("failure observer failed")
+    }
+  }
+  const client = new AiPredictionClientSpy([
+    cleanOverlapResponse(inputs[0]!.pair),
+    new Error("provider failed")
+  ])
+
+  const results = await predictBranchPairsWithAi(inputs, client, {
+    debugObserver: observer
+  })
+
+  assert.deepEqual(results.map(result => result.status), ["predicted", "failed"])
+  assert.equal(client.prompts.length, 2)
+})
+
+class AiPredictionPairDebugObserverSpy implements AiPredictionPairDebugObserver {
+  promptEvents: AiPredictionPairPromptDebugEvent[] = []
+  responseEvents: AiPredictionPairResponseDebugEvent[] = []
+  failureEvents: AiPredictionPairFailureDebugEvent[] = []
+
+  onPromptBuilt(event: AiPredictionPairPromptDebugEvent): void {
+    this.promptEvents.push(event)
+  }
+
+  onResponseReceived(event: AiPredictionPairResponseDebugEvent): void {
+    this.responseEvents.push(event)
+  }
+
+  onPredictionFailed(event: AiPredictionPairFailureDebugEvent): void {
+    this.failureEvents.push(event)
+  }
+}
 
 class AiPredictionClientSpy implements AiPredictionClient {
   prompts: AiPredictionPrompt[] = []
