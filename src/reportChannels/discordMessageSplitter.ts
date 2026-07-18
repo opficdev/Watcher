@@ -7,6 +7,11 @@ const PAIR_SECTION_HEADINGS = new Set([
   "### Confirmed Conflicts",
   "### Potential Risks"
 ])
+const PAIR_UNIT_BOUNDARIES = new Set([
+  "- AI Analysis:",
+  "- Recommended Resolution:",
+  "- Suggested Patch:"
+])
 
 // Discord 전송 내용과 branch 조합별 조각 위치
 export type DiscordMessage = {
@@ -28,7 +33,7 @@ export function splitDiscordMessages(markdown: string): DiscordMessage[] {
     return messagesFor({ lines: [markdown] })
   }
 
-  return blocks.flatMap(messagesFor)
+  return numberedPairMessagesFor(blocks.flatMap(messagesFor))
 }
 
 // Summary, section, branch 조합 경계를 원래 line 순서대로 block으로 구성
@@ -66,6 +71,18 @@ function structuralBlocksFor(markdown: string): DiscordMessageBlock[] | undefine
       continue
     }
 
+    if (block.pairLabel && PAIR_UNIT_BOUNDARIES.has(line)) {
+      appendBlock(blocks, block)
+      block = {
+        lines: [
+          `${PAIR_HEADING_PREFIX}${block.pairLabel}`,
+          line
+        ],
+        pairLabel: block.pairLabel
+      }
+      continue
+    }
+
     block.lines.push(line)
   }
 
@@ -95,24 +112,64 @@ function appendBlock(
 
 // 한 구조 block을 Discord 길이 제한에 맞는 message로 변환
 function messagesFor(block: DiscordMessageBlock): DiscordMessage[] {
-  return contentsFor(block.lines.join("\n")).map((content, index) => ({
+  const continuationHeading = continuationHeadingFor(block.pairLabel)
+
+  return contentsFor(
+    block.lines.join("\n"),
+    continuationHeading
+  ).map((content, index) => ({
     content,
     pairLabel: block.pairLabel,
     fragmentNumber: index + 1
   }))
 }
 
+// 같은 branch 조합의 message에 입력 순서대로 연속된 조각 번호를 부여
+function numberedPairMessagesFor(messages: DiscordMessage[]): DiscordMessage[] {
+  const fragmentNumbers = new Map<string, number>()
+
+  return messages.map(message => {
+    if (!message.pairLabel) {
+      return message
+    }
+
+    const fragmentNumber = (fragmentNumbers.get(message.pairLabel) ?? 0) + 1
+    fragmentNumbers.set(message.pairLabel, fragmentNumber)
+
+    return {
+      ...message,
+      fragmentNumber
+    }
+  })
+}
+
+// 후속 message에서 반복해도 content 제한을 지킬 수 있는 조합 제목만 반환
+function continuationHeadingFor(pairLabel: string | undefined): string | undefined {
+  if (!pairLabel) {
+    return undefined
+  }
+
+  const heading = `${PAIR_HEADING_PREFIX}${pairLabel}`
+  return heading.length + 1 < DISCORD_CONTENT_LIMIT ? heading : undefined
+}
+
 // Discord content 최대 길이를 넘지 않도록 줄 단위로 최대한 보존하며 분할
-function contentsFor(markdown: string): string[] {
+function contentsFor(
+  markdown: string,
+  continuationHeading?: string
+): string[] {
   if (markdown.length <= DISCORD_CONTENT_LIMIT) {
     return [markdown]
   }
 
   const contents: string[] = []
   let current = ""
+  let isFirst = true
 
   for (const line of markdown.split("\n")) {
-    const next = current.length === 0 ? line : `${current}\n${line}`
+    const next = current.length === 0
+      ? continuedContentFor(line, isFirst, continuationHeading)
+      : `${current}\n${line}`
 
     if (next.length <= DISCORD_CONTENT_LIMIT) {
       current = next
@@ -121,14 +178,21 @@ function contentsFor(markdown: string): string[] {
 
     if (current.length) {
       contents.push(current)
+      isFirst = false
     }
 
-    if (line.length <= DISCORD_CONTENT_LIMIT) {
-      current = line
+    const continued = continuedContentFor(line, isFirst, continuationHeading)
+
+    if (continued.length <= DISCORD_CONTENT_LIMIT) {
+      current = continued
       continue
     }
 
-    contents.push(...chunksFor(line))
+    for (const chunk of chunksFor(line, isFirst, continuationHeading)) {
+      contents.push(chunk)
+      isFirst = false
+    }
+
     current = ""
   }
 
@@ -139,12 +203,38 @@ function contentsFor(markdown: string): string[] {
   return contents
 }
 
-// 한 줄 자체가 Discord 제한보다 길면 고정 길이 chunk로 분리
-function chunksFor(value: string): string[] {
-  const chunks: string[] = []
+// 두 번째 조각부터 branch 조합 제목을 앞에 다시 붙여 문맥을 유지
+function continuedContentFor(
+  value: string,
+  isFirst: boolean,
+  continuationHeading?: string
+): string {
+  if (isFirst || !continuationHeading) {
+    return value
+  }
 
-  for (let index = 0; index < value.length; index += DISCORD_CONTENT_LIMIT) {
-    chunks.push(value.slice(index, index + DISCORD_CONTENT_LIMIT))
+  return `${continuationHeading}\n${value}`
+}
+
+// 한 줄 자체가 제한보다 길면 반복 제목을 포함한 고정 길이 chunk로 분리
+function chunksFor(
+  value: string,
+  isFirst: boolean,
+  continuationHeading?: string
+): string[] {
+  const chunks: string[] = []
+  let remaining = value
+
+  while (remaining.length) {
+    const headingLength = isFirst || !continuationHeading
+      ? 0
+      : continuationHeading.length + 1
+    const contentLength = DISCORD_CONTENT_LIMIT - headingLength
+    const chunk = remaining.slice(0, contentLength)
+
+    chunks.push(continuedContentFor(chunk, isFirst, continuationHeading))
+    remaining = remaining.slice(contentLength)
+    isFirst = false
   }
 
   return chunks
