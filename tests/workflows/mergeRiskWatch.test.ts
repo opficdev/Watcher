@@ -20,7 +20,6 @@ test("builds merge risk watch options from environment", () => {
     WATCHER_REPOSITORY_PATH: "/tmp/repository",
     WATCHER_BASE_BRANCH: "develop",
     WATCHER_DEFAULT_BRANCH: "main",
-    WATCHER_CRITICAL_FILE_PATTERNS: "package-lock.json\n.github/**",
     WATCHER_GITHUB_API_URL: "https://api.github.test",
     WATCHER_DEBUG_ARTIFACT_DIR: "/tmp/watcher-debug",
     WATCHER_WORKFLOW_REF: "opficdev/Watcher/.github/workflows/merge-risk-watch.yml@develop",
@@ -32,10 +31,6 @@ test("builds merge risk watch options from environment", () => {
     repositoryPath: "/tmp/repository",
     baseBranch: "develop",
     defaultBranch: "main",
-    criticalFilePatterns: [
-      "package-lock.json",
-      ".github/**"
-    ],
     remoteName: "origin",
     githubApiUrl: "https://api.github.test",
     githubToken: "github-token",
@@ -51,7 +46,6 @@ test("omits empty optional environment values", () => {
     WATCHER_REPOSITORY_PATH: "/tmp/repository",
     WATCHER_BASE_BRANCH: "develop",
     WATCHER_DEFAULT_BRANCH: "   ",
-    WATCHER_CRITICAL_FILE_PATTERNS: "\n  \n",
     GITHUB_TOKEN: "   "
   })
 
@@ -60,15 +54,14 @@ test("omits empty optional environment values", () => {
     repositoryPath: "/tmp/repository",
     baseBranch: "develop",
     defaultBranch: undefined,
-    criticalFilePatterns: [],
     remoteName: "origin",
     githubApiUrl: "https://api.github.com",
     githubToken: undefined
   })
 })
 
-// debug directory가 설정되면 workflow 실행 중 consumer artifact용 파일을 생성하는지 확인
-test("writes merge risk debug artifacts", async () => {
+// debug directory가 설정되면 pair 분석 artifact를 원문 없이 생성하는지 확인
+test("writes pair merge risk debug artifacts", async () => {
   const fixture = await createWorkflowGitFixture()
   const originalFetch = globalThis.fetch
   const originalOpenAiApiKey = process.env.OPENAI_API_KEY
@@ -82,9 +75,7 @@ test("writes merge risk debug artifacts", async () => {
     const request = new Request(input, init)
 
     if (request.url === "https://discord.test/webhook-secret") {
-      return new Response(null, {
-        status: 204
-      })
+      return new Response(null, { status: 204 })
     }
 
     openAiRequestCount += 1
@@ -101,32 +92,21 @@ test("writes merge risk debug artifacts", async () => {
       ?.content
 
     return jsonResponse({
-      output_text: JSON.stringify({
-        predictions: [{
-          branchName: "feature/critical",
-          baseBranch: "main",
-          prediction: "critical file update needs review",
-          recommendedActions: []
-        }, {
-          branchName: "feature/critical-peer",
-          baseBranch: "main",
-          prediction: "critical file overlap needs review",
-          recommendedActions: []
-        }]
-      })
+      output_text: JSON.stringify(cleanOverlapResponse({
+        leftBranchName: "feature/critical",
+        rightBranchName: "feature/critical-peer"
+      }))
     })
   }
 
   try {
     await run({
-      repository: "opficdev/Watcher",
+      ...baseOptions(),
+      githubToken: undefined,
       repositoryPath: fixture.repositoryPath,
       baseBranch: "main",
-      criticalFilePatterns: ["critical.txt"],
-      remoteName: "origin",
-      githubApiUrl: "https://api.github.test",
       debugArtifactDir: fixture.debugArtifactDir,
-      workflowRef: "opficdev/Watcher/.github/workflows/merge-risk-watch.yml@feat/#35-artifact"
+      workflowRef: "opficdev/Watcher/.github/workflows/merge-risk-watch.yml@feat/#49"
     })
 
     const files = (await readdir(fixture.debugArtifactDir)).sort()
@@ -138,133 +118,91 @@ test("writes merge risk debug artifacts", async () => {
       "branch-pairs.json",
       "branch-selection.json",
       "deterministic-evidence.json",
-      "report.md",
       "run.json"
     ])
 
-    const runArtifact = await readJson<{
-      repository?: string
-      baseBranch?: string
-      workflowRef?: string
-    }>(fixture.debugArtifactDir, "run.json")
-    const aiResultArtifact = await readJson<{
+    const aiPromptArtifact = await readJson<{
+      events?: Array<{
+        targetPair?: {
+          leftBranchName?: string
+          rightBranchName?: string
+        }
+        prompt?: {
+          userPrompt?: string
+        }
+      }>
+    }>(fixture.debugArtifactDir, "ai-prompt.json")
+    const deterministicArtifact = await readJson<{
+      graph?: {
+        edges?: Array<{
+          pair?: {
+            leftBranchName?: string
+            rightBranchName?: string
+          }
+          status?: string
+          reasons?: Array<{
+            code?: string
+          }>
+        }>
+      }
+    }>(fixture.debugArtifactDir, "deterministic-evidence.json")
+    const targetArtifact = await readJson<{
+      targetPairs?: Array<{
+        pair?: {
+          leftBranchName?: string
+          rightBranchName?: string
+        }
+        status?: string
+      }>
+      skippedPairs?: unknown[]
+    }>(fixture.debugArtifactDir, "ai-target-selection.json")
+    const resultArtifact = await readJson<{
       predictions?: Array<{
         status?: string
-        branchName?: string
+        pair?: {
+          leftBranchName?: string
+          rightBranchName?: string
+        }
       }>
     }>(fixture.debugArtifactDir, "ai-result.json")
-    const aiPromptArtifact = await readJson<{
-      prompt?: {
-        userPrompt?: string
-      }
-    }>(fixture.debugArtifactDir, "ai-prompt.json")
-    const aiResponseArtifact = await readJson<{
-      response?: {
-        predictions?: Array<{
-          prediction?: string
-        }>
-      }
-    }>(fixture.debugArtifactDir, "ai-response.json")
-    const deterministicArtifact = await readJson<{
-      risks?: Array<{
-        branchName?: string
-        status?: string
-        reasons?: Array<{
-          code?: string
-          branches?: string[]
-        }>
-      }>
-    }>(fixture.debugArtifactDir, "deterministic-evidence.json")
-    const branchSelectionArtifact = await readJson<{
-      selectedBranches?: Array<{
-        name?: string
-        updatedAt?: string
-      }>
-      excludedBranches?: Array<{
-        name?: string
-        reason?: string
-      }>
-    }>(fixture.debugArtifactDir, "branch-selection.json")
-    const branchPairsArtifact = await readJson<{
-      pairs?: Array<{
-        leftBranchName?: string
-        rightBranchName?: string
-      }>
-    }>(fixture.debugArtifactDir, "branch-pairs.json")
     const combinedArtifact = (await Promise.all(files.map(file =>
       readFile(join(fixture.debugArtifactDir, file), "utf8")
     ))).join("\n")
 
     assert.equal(openAiRequestCount, 1)
     assert.ok(openAiUserPrompt)
-    assert.ok(aiPromptArtifact.prompt)
-    assert.ok(aiPromptArtifact.prompt.userPrompt)
-    assert.equal(aiPromptArtifact.prompt.userPrompt, openAiUserPrompt)
-    assert.equal(
-      aiResponseArtifact.response?.predictions?.[0]?.prediction,
-      "critical file update needs review"
-    )
-    assert.equal(runArtifact.repository, "opficdev/Watcher")
-    assert.equal(runArtifact.baseBranch, "main")
-    assert.equal(
-      runArtifact.workflowRef,
-      "opficdev/Watcher/.github/workflows/merge-risk-watch.yml@feat/#35-artifact"
-    )
-    assert.equal(deterministicArtifact.risks?.[0]?.status, "critical")
-    assert.deepEqual(deterministicArtifact.risks?.map(risk =>
-      risk.reasons?.map(reason => reason.code)
-    ), [[
-      "same_hunk_overlap",
-      "same_file_overlap",
-      "critical_file_changed"
-    ], [
-      "same_hunk_overlap",
-      "same_file_overlap",
-      "critical_file_changed"
-    ]])
-    assert.deepEqual(
-      deterministicArtifact.risks?.[0]?.reasons?.[0]?.branches,
-      ["feature/critical-peer"]
-    )
-    assert.equal(aiResultArtifact.predictions?.[0]?.status, "predicted")
-    assert.equal(aiResultArtifact.predictions?.[0]?.branchName, "feature/critical")
-    assert.deepEqual(branchSelectionArtifact.selectedBranches?.map(branch => branch.name), [
-      "feature/critical",
-      "feature/critical-peer"
-    ])
-    assert.deepEqual(branchSelectionArtifact.selectedBranches?.map(branch => branch.updatedAt), [
-      fixture.committerDate,
-      fixture.committerDate
-    ])
-    assert.deepEqual(branchSelectionArtifact.excludedBranches?.map(branch => ({
-      name: branch.name,
-      reason: branch.reason
-    })), [{
-      name: "main",
-      reason: "base_branch"
-    }])
-    assert.deepEqual(branchPairsArtifact.pairs, [{
+    assert.equal(aiPromptArtifact.events?.length, 1)
+    assert.notEqual(aiPromptArtifact.events?.[0]?.prompt?.userPrompt, openAiUserPrompt)
+    assert.deepEqual(aiPromptArtifact.events?.[0]?.targetPair, {
       leftBranchName: "feature/critical",
       rightBranchName: "feature/critical-peer"
-    }, {
-      leftBranchName: "feature/critical",
-      rightBranchName: "main"
-    }, {
-      leftBranchName: "feature/critical-peer",
-      rightBranchName: "main"
-    }])
-    assert.equal(await git(fixture.repositoryPath, ["status", "--porcelain=v1"]), "")
-    assert.equal(
-      (await git(fixture.repositoryPath, ["worktree", "list", "--porcelain"]))
-        .split("\n")
-        .filter(line => line.startsWith("worktree "))
-        .length,
-      1
+    })
+    const potentialEdge = deterministicArtifact.graph?.edges?.find(edge =>
+      edge.pair?.leftBranchName === "feature/critical" &&
+      edge.pair.rightBranchName === "feature/critical-peer"
     )
+    assert.equal(potentialEdge?.status, "potential_overlap")
+    assert.deepEqual(potentialEdge?.reasons?.map(reason => reason.code), [
+      "same_hunk_overlap",
+      "same_file_overlap"
+    ])
+    assert.deepEqual(targetArtifact.targetPairs, [{
+      pair: {
+        leftBranchName: "feature/critical",
+        rightBranchName: "feature/critical-peer"
+      },
+      status: "potential_overlap"
+    }])
+    assert.equal(targetArtifact.skippedPairs?.length, 2)
+    assert.equal(resultArtifact.predictions?.[0]?.status, "predicted")
+    assert.deepEqual(resultArtifact.predictions?.[0]?.pair, {
+      leftBranchName: "feature/critical",
+      rightBranchName: "feature/critical-peer"
+    })
+    assert.equal(await git(fixture.repositoryPath, ["status", "--porcelain=v1"]), "")
     assert.doesNotMatch(combinedArtifact, /openai-secret/)
     assert.doesNotMatch(combinedArtifact, /webhook-secret/)
     assert.doesNotMatch(combinedArtifact, /feature critical content/)
-    assert.doesNotMatch(combinedArtifact, /peer critical content/)
   } finally {
     globalThis.fetch = originalFetch
     restoreEnv("OPENAI_API_KEY", originalOpenAiApiKey)
@@ -273,16 +211,124 @@ test("writes merge risk debug artifacts", async () => {
   }
 })
 
-// 활성 branch 사이의 충돌 확정 관계를 양쪽 branch 위험에 반영하는지 확인
-test("uses active branch conflicts for both branch risks", async () => {
+// 확정 conflict 조합을 한 번만 AI로 분석하고 patch 원문은 artifact에서 제거하는지 확인
+test("predicts confirmed conflict pair once", async () => {
   const fixture = await createWorkflowGitFixture({
     peerContent: "peer critical content\n"
   })
   const originalFetch = globalThis.fetch
   const originalOpenAiApiKey = process.env.OPENAI_API_KEY
   const originalDiscordWebhookUrl = process.env.DISCORD_WEBHOOK_URL
+  let openAiRequestCount = 0
+  let discordReport = ""
 
   process.env.OPENAI_API_KEY = "openai-secret"
+  process.env.DISCORD_WEBHOOK_URL = "https://discord.test/webhook-secret"
+  globalThis.fetch = async (input, init) => {
+    const request = new Request(input, init)
+
+    if (request.url === "https://discord.test/webhook-secret") {
+      discordReport += String((await request.json() as { content?: string }).content ?? "")
+      return new Response(null, { status: 204 })
+    }
+
+    openAiRequestCount += 1
+    return jsonResponse({
+      output_text: JSON.stringify(confirmedConflictResponse({
+        leftBranchName: "feature/critical",
+        rightBranchName: "feature/critical-peer"
+      }))
+    })
+  }
+
+  try {
+    await run({
+      ...baseOptions(),
+      githubToken: undefined,
+      repositoryPath: fixture.repositoryPath,
+      baseBranch: "main",
+      debugArtifactDir: fixture.debugArtifactDir
+    })
+
+    const resultArtifact = await readFile(
+      join(fixture.debugArtifactDir, "ai-result.json"),
+      "utf8"
+    )
+
+    assert.equal(openAiRequestCount, 1)
+    assert.match(discordReport, /resolved critical content/)
+    assert.doesNotMatch(resultArtifact, /resolved critical content/)
+    assert.equal((await readdir(fixture.debugArtifactDir)).includes("report.md"), false)
+  } finally {
+    globalThis.fetch = originalFetch
+    restoreEnv("OPENAI_API_KEY", originalOpenAiApiKey)
+    restoreEnv("DISCORD_WEBHOOK_URL", originalDiscordWebhookUrl)
+    await fixture.remove()
+  }
+})
+
+// provider 오류 원문이 실패 artifact에 기록되지 않는지 확인
+test("redacts provider error detail from debug artifacts", async () => {
+  const fixture = await createWorkflowGitFixture()
+  const originalFetch = globalThis.fetch
+  const originalOpenAiApiKey = process.env.OPENAI_API_KEY
+  const originalDiscordWebhookUrl = process.env.DISCORD_WEBHOOK_URL
+  const marker = "RAW_PATCH_MARKER"
+
+  process.env.OPENAI_API_KEY = "openai-secret"
+  process.env.DISCORD_WEBHOOK_URL = "https://discord.test/webhook-secret"
+  globalThis.fetch = async input => {
+    const request = new Request(input)
+
+    if (request.url === "https://discord.test/webhook-secret") {
+      return new Response(null, { status: 204 })
+    }
+
+    return new Response(JSON.stringify({
+      error: {
+        message: marker
+      }
+    }), { status: 500 })
+  }
+
+  try {
+    await run({
+      ...baseOptions(),
+      githubToken: undefined,
+      repositoryPath: fixture.repositoryPath,
+      baseBranch: "main",
+      debugArtifactDir: fixture.debugArtifactDir
+    })
+
+    const errorArtifact = await readFile(
+      join(fixture.debugArtifactDir, "ai-error.json"),
+      "utf8"
+    )
+    const resultArtifact = await readFile(
+      join(fixture.debugArtifactDir, "ai-result.json"),
+      "utf8"
+    )
+
+    assert.doesNotMatch(errorArtifact, new RegExp(marker))
+    assert.doesNotMatch(resultArtifact, new RegExp(marker))
+  } finally {
+    globalThis.fetch = originalFetch
+    restoreEnv("OPENAI_API_KEY", originalOpenAiApiKey)
+    restoreEnv("DISCORD_WEBHOOK_URL", originalDiscordWebhookUrl)
+    await fixture.remove()
+  }
+})
+
+// same-file-only와 clean 조합은 API key 없이도 AI 호출을 생략하는지 확인
+test("skips AI calls for same-file-only and clean pairs", async () => {
+  const fixture = await createWorkflowGitFixture({
+    separateHunks: true
+  })
+  const originalFetch = globalThis.fetch
+  const originalOpenAiApiKey = process.env.OPENAI_API_KEY
+  const originalDiscordWebhookUrl = process.env.DISCORD_WEBHOOK_URL
+
+  delete process.env.OPENAI_API_KEY
   process.env.DISCORD_WEBHOOK_URL = "https://discord.test/webhook-secret"
   globalThis.fetch = async input => {
     assert.equal(new Request(input).url, "https://discord.test/webhook-secret")
@@ -291,86 +337,27 @@ test("uses active branch conflicts for both branch risks", async () => {
 
   try {
     await run({
-      repository: "opficdev/Watcher",
+      ...baseOptions(),
+      githubToken: undefined,
       repositoryPath: fixture.repositoryPath,
       baseBranch: "main",
-      criticalFilePatterns: ["critical.txt"],
-      remoteName: "origin",
-      githubApiUrl: "https://api.github.test",
       debugArtifactDir: fixture.debugArtifactDir
     })
 
-    const deterministicArtifact = await readJson<{
-      risks?: Array<{
-        branchName?: string
+    const artifact = await readJson<{
+      targetPairs?: unknown[]
+      skippedPairs?: Array<{
         status?: string
-        reasons?: Array<{
-          code?: string
-          branches?: string[]
-        }>
-      }>
-    }>(fixture.debugArtifactDir, "deterministic-evidence.json")
-    const aiTargetArtifact = await readJson<{
-      targetBranches?: unknown[]
-      skippedBranches?: Array<{
-        branchName?: string
-        reason?: string
+        reasons?: string[]
       }>
     }>(fixture.debugArtifactDir, "ai-target-selection.json")
-    const aiResultArtifact = await readJson<{
-      predictions?: Array<{
-        status?: string
-        branchName?: string
-        reason?: string
-      }>
-    }>(fixture.debugArtifactDir, "ai-result.json")
 
-    assert.deepEqual(deterministicArtifact.risks, [{
-      branchName: "feature/critical",
-      baseBranch: "main",
-      score: 100,
-      status: "critical",
-      reasons: [{
-        code: "confirmed_conflict",
-        message: "branch 조합의 virtual merge에서 conflict가 확인됨",
-        scoreImpact: 100,
-        files: ["critical.txt"],
-        branches: ["feature/critical-peer"]
-      }]
-    }, {
-      branchName: "feature/critical-peer",
-      baseBranch: "main",
-      score: 100,
-      status: "critical",
-      reasons: [{
-        code: "confirmed_conflict",
-        message: "branch 조합의 virtual merge에서 conflict가 확인됨",
-        scoreImpact: 100,
-        files: ["critical.txt"],
-        branches: ["feature/critical"]
-      }]
-    }])
-    assert.deepEqual(aiTargetArtifact.targetBranches, [])
-    assert.deepEqual(aiTargetArtifact.skippedBranches, [{
-      branchName: "feature/critical",
-      baseBranch: "main",
-      reason: "confirmed_conflict"
-    }, {
-      branchName: "feature/critical-peer",
-      baseBranch: "main",
-      reason: "confirmed_conflict"
-    }])
-    assert.deepEqual(aiResultArtifact.predictions, [{
-      status: "skipped",
-      branchName: "feature/critical",
-      baseBranch: "main",
-      reason: "confirmed_conflict"
-    }, {
-      status: "skipped",
-      branchName: "feature/critical-peer",
-      baseBranch: "main",
-      reason: "confirmed_conflict"
-    }])
+    assert.deepEqual(artifact.targetPairs, [])
+    assert.equal(artifact.skippedPairs?.length, 3)
+    assert.equal(artifact.skippedPairs?.some(pair =>
+      pair.status === "potential_overlap" &&
+      pair.reasons?.includes("same_file_overlap")
+    ), true)
   } finally {
     globalThis.fetch = originalFetch
     restoreEnv("OPENAI_API_KEY", originalOpenAiApiKey)
@@ -379,14 +366,14 @@ test("uses active branch conflicts for both branch risks", async () => {
   }
 })
 
-// fetch 실패 시 오래된 remote ref에서 changed file과 hunk를 다시 만들지 않는지 확인
-test("keeps deterministic evidence empty after pair fetch failure", async () => {
+// fetch 실패 조합은 API key 없이 error로 유지하고 AI 호출을 만들지 않는지 확인
+test("keeps pair merge errors without AI calls", async () => {
   const fixture = await createWorkflowGitFixture()
   const originalOpenAiApiKey = process.env.OPENAI_API_KEY
   const originalDiscordWebhookUrl = process.env.DISCORD_WEBHOOK_URL
   const originalFetch = globalThis.fetch
 
-  process.env.OPENAI_API_KEY = "openai-secret"
+  delete process.env.OPENAI_API_KEY
   process.env.DISCORD_WEBHOOK_URL = "https://discord.test/webhook-secret"
   globalThis.fetch = async input => {
     assert.equal(new Request(input).url, "https://discord.test/webhook-secret")
@@ -401,33 +388,33 @@ test("keeps deterministic evidence empty after pair fetch failure", async () => 
       join(fixture.repositoryPath, "missing-remote.git")
     ])
     await run({
-      repository: "opficdev/Watcher",
+      ...baseOptions(),
+      githubToken: undefined,
       repositoryPath: fixture.repositoryPath,
       baseBranch: "main",
-      criticalFilePatterns: [],
-      remoteName: "origin",
-      githubApiUrl: "https://api.github.test",
       debugArtifactDir: fixture.debugArtifactDir
     })
 
     const artifact = await readJson<{
-      inputs?: Array<{
-        gitSignal?: {
-          status?: string
-          mergeBaseSha?: string
-          changedFiles?: string[]
-        }
-        changedHunks?: unknown[]
+      pairResults?: Array<{
+        status?: string
       }>
+      graph?: {
+        edges?: Array<{
+          status?: string
+        }>
+      }
     }>(fixture.debugArtifactDir, "deterministic-evidence.json")
+    const targetArtifact = await readJson<{
+      targetPairs?: unknown[]
+    }>(fixture.debugArtifactDir, "ai-target-selection.json")
 
-    assert.equal(artifact.inputs?.length, 2)
-    assert.equal(artifact.inputs?.every(input =>
-      input.gitSignal?.status === "merge_check_failed" &&
-      input.gitSignal.mergeBaseSha === undefined &&
-      input.gitSignal.changedFiles?.length === 0 &&
-      input.changedHunks?.length === 0
+    assert.equal(artifact.pairResults?.length, 3)
+    assert.equal(artifact.pairResults?.every(result =>
+      result.status === "merge_check_failed"
     ), true)
+    assert.equal(artifact.graph?.edges?.every(edge => edge.status === "error"), true)
+    assert.deepEqual(targetArtifact.targetPairs, [])
   } finally {
     globalThis.fetch = originalFetch
     restoreEnv("OPENAI_API_KEY", originalOpenAiApiKey)
@@ -555,7 +542,6 @@ function baseOptions() {
     repository: "opficdev/Watcher",
     repositoryPath: "/tmp/repository",
     baseBranch: "develop",
-    criticalFilePatterns: [],
     remoteName: "origin",
     githubApiUrl: "https://api.github.test",
     githubToken: "github-token"
@@ -573,6 +559,7 @@ function jsonResponse(body: unknown): Response {
 
 async function createWorkflowGitFixture(options: {
   peerContent?: string
+  separateHunks?: boolean
 } = {}): Promise<{
   repositoryPath: string
   debugArtifactDir: string
@@ -588,24 +575,33 @@ async function createWorkflowGitFixture(options: {
     GIT_AUTHOR_DATE: "2000-01-01T00:00:00.000Z",
     GIT_COMMITTER_DATE: committerDate
   }
+  const baseContent = options.separateHunks
+    ? "first line\nshared line\nthird line\n"
+    : "base content\n"
+  const featureContent = options.separateHunks
+    ? "feature line\nshared line\nthird line\n"
+    : "feature critical content\n"
+  const peerContent = options.separateHunks
+    ? "first line\nshared line\npeer line\n"
+    : options.peerContent ?? "feature critical content\n"
 
   await git(root, ["init", "--initial-branch=main", repositoryPath])
   await git(repositoryPath, ["config", "user.email", "opfic@example.com"])
   await git(repositoryPath, ["config", "user.name", "opfic"])
 
-  await writeFile(join(repositoryPath, "critical.txt"), "base content\n")
+  await writeFile(join(repositoryPath, "critical.txt"), baseContent)
   await git(repositoryPath, ["add", "critical.txt"])
   await git(repositoryPath, ["commit", "-m", "initial"])
 
   await git(repositoryPath, ["checkout", "-b", "feature/critical"])
-  await writeFile(join(repositoryPath, "critical.txt"), "feature critical content\n")
+  await writeFile(join(repositoryPath, "critical.txt"), featureContent)
   await git(repositoryPath, ["commit", "-am", "feature critical"], commitDates)
 
   await git(repositoryPath, ["checkout", "main"])
   await git(repositoryPath, ["checkout", "-b", "feature/critical-peer"])
   await writeFile(
     join(repositoryPath, "critical.txt"),
-    options.peerContent ?? "feature critical content\n"
+    peerContent
   )
   await git(repositoryPath, ["commit", "-am", "feature critical peer"], commitDates)
 
@@ -623,6 +619,58 @@ async function createWorkflowGitFixture(options: {
     async remove(): Promise<void> {
       await rm(root, { recursive: true, force: true })
     }
+  }
+}
+
+function cleanOverlapResponse(pair: {
+  leftBranchName: string
+  rightBranchName: string
+}) {
+  return {
+    kind: "clean_overlap",
+    pair,
+    overlapCause: {
+      summary: "같은 변경 범위를 수정함",
+      files: ["critical.txt"]
+    },
+    integrationOrder: {
+      strategy: "merge",
+      firstBranchName: pair.leftBranchName,
+      secondBranchName: pair.rightBranchName,
+      reason: "먼저 반영한 변경을 기준으로 확인함",
+      steps: ["첫 branch merge", "두 번째 branch 갱신"]
+    },
+    preventiveActions: [{
+      title: "통합 동작 확인",
+      description: "두 변경이 함께 동작하는지 확인함",
+      files: ["critical.txt"]
+    }]
+  }
+}
+
+function confirmedConflictResponse(pair: {
+  leftBranchName: string
+  rightBranchName: string
+}) {
+  return {
+    kind: "confirmed_conflict",
+    pair,
+    conflictCause: {
+      summary: "같은 줄을 다르게 수정함",
+      files: ["critical.txt"]
+    },
+    integrationOrder: {
+      strategy: "rebase",
+      firstBranchName: pair.leftBranchName,
+      secondBranchName: pair.rightBranchName,
+      reason: "첫 변경을 기준으로 충돌을 해결함",
+      steps: ["첫 branch 반영", "두 번째 branch rebase"]
+    },
+    patches: [{
+      filePath: "critical.txt",
+      patch: "@@ -1 +1 @@\n-old\n+resolved critical content",
+      reason: "두 변경을 하나의 결과로 정리함"
+    }]
   }
 }
 

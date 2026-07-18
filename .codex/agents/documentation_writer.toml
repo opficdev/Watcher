@@ -8,7 +8,7 @@ Read AGENTS.md and .agents/roles.md before drafting.
 Act only as the Documentation Writer defined in .agents/roles.md.
 Match .github/pull_request_template.md, the actual diff, current implementation, tests, workflows, and live issue or PR state when available.
 Write PR and review prose in Korean with noun-form endings while preserving implementation names, paths, commands, environment variables, workflow names, branch names, issue numbers, and commit hashes.
-Keep deterministic possibility distinct from AI prediction and keep inputs, secrets, permissions, debug artifacts, report fallback, and release behavior aligned with the repository.
+Keep deterministic pair results distinct from AI prediction and keep inputs, secrets, permissions, debug artifacts, report fallback, and release behavior aligned with the repository.
 Edit only documentation files named in the task packet. Do not edit TypeScript, tests, package configuration, or workflows, and do not create GitHub content unless explicitly authorized.
 Return exactly the Documentation Result format from .agents/roles.md unless the task packet requests direct Markdown draft output.
 """

@@ -1,74 +1,111 @@
 import { createHash } from "node:crypto"
 
-type AiPredictionPromptDebugEventInput = {
-  targetBranches: Array<{
-    branchName: string
-    baseBranch: string
-  }>
+type AiPredictionPairPromptDebugEventInput = {
+  targetPair: {
+    leftBranchName: string
+    rightBranchName: string
+  }
   prompt: {
     systemPrompt: string
     userPrompt: string
-    responseShape?: string
+    responseShape: string
   }
 }
 
-type AiPredictionResponseDebugEventInput = {
-  targetBranches: Array<{
-    branchName: string
-    baseBranch: string
-  }>
+type AiPredictionPairResponseDebugEventInput = {
+  targetPair: {
+    leftBranchName: string
+    rightBranchName: string
+  }
   response: unknown
 }
 
-export type AiPredictionPromptDebugArtifact = {
-  targetBranches: Array<{
-    branchName: string
-    baseBranch: string
-  }>
+type AiPredictionPairFailureDebugEventInput = {
+  targetPair: {
+    leftBranchName: string
+    rightBranchName: string
+  }
+  errorMessage: string
+}
+
+export type AiPredictionPairPromptDebugArtifact = {
+  targetPair: {
+    leftBranchName: string
+    rightBranchName: string
+  }
   prompt: {
     systemPrompt: string
     userPrompt: string
-    responseShape?: string
+    responseShape: string
   }
 }
 
-export type AiPredictionResponseDebugArtifact = {
-  targetBranches: Array<{
-    branchName: string
-    baseBranch: string
-  }>
+export type AiPredictionPairResponseDebugArtifact = {
+  targetPair: {
+    leftBranchName: string
+    rightBranchName: string
+  }
   response: unknown
 }
 
-// OpenAI에 전달된 prompt event에서 consumer repository 코드 원문만 metadata로 치환
-export function sanitizeAiPredictionPromptDebugEvent(
-  event: AiPredictionPromptDebugEventInput
-): AiPredictionPromptDebugArtifact {
+export type AiPredictionPairFailureDebugArtifact = {
+  targetPair: {
+    leftBranchName: string
+    rightBranchName: string
+  }
+  error: {
+    messageByteLength: number
+    messageHash: string
+    redacted: true
+  }
+}
+
+// pair prompt event의 ordered targetPair를 유지하고 코드 원문을 metadata로 치환
+export function sanitizeAiPredictionPairPromptDebugEvent(
+  event: AiPredictionPairPromptDebugEventInput
+): AiPredictionPairPromptDebugArtifact {
   return {
-    targetBranches: event.targetBranches.map(target => ({
-      branchName: target.branchName,
-      baseBranch: target.baseBranch
-    })),
+    targetPair: {
+      leftBranchName: event.targetPair.leftBranchName,
+      rightBranchName: event.targetPair.rightBranchName
+    },
     prompt: {
       systemPrompt: event.prompt.systemPrompt,
       userPrompt: sanitizedUserPromptFor(event.prompt.userPrompt),
-      ...(event.prompt.responseShape
-        ? { responseShape: event.prompt.responseShape }
-        : {})
+      responseShape: event.prompt.responseShape
     }
   }
 }
 
-// provider response에서 제안 patch 원문만 크기와 hunk metadata로 치환
-export function sanitizeAiPredictionResponseDebugEvent(
-  event: AiPredictionResponseDebugEventInput
-): AiPredictionResponseDebugArtifact {
+// pair response event의 ordered targetPair를 유지하고 patch 원문을 metadata로 치환
+export function sanitizeAiPredictionPairResponseDebugEvent(
+  event: AiPredictionPairResponseDebugEventInput
+): AiPredictionPairResponseDebugArtifact {
   return {
-    targetBranches: event.targetBranches.map(target => ({
-      branchName: target.branchName,
-      baseBranch: target.baseBranch
-    })),
+    targetPair: {
+      leftBranchName: event.targetPair.leftBranchName,
+      rightBranchName: event.targetPair.rightBranchName
+    },
     response: sanitizedResponseValueFor(event.response)
+  }
+}
+
+// pair 실패 원문을 재현할 수 없는 크기와 hash metadata로 치환
+export function sanitizeAiPredictionPairFailureDebugEvent(
+  event: AiPredictionPairFailureDebugEventInput
+): AiPredictionPairFailureDebugArtifact {
+  return {
+    targetPair: {
+      leftBranchName: event.targetPair.leftBranchName,
+      rightBranchName: event.targetPair.rightBranchName
+    },
+    error: {
+      messageByteLength: Buffer.byteLength(event.errorMessage, "utf8"),
+      messageHash: createHash("sha256")
+        .update(event.errorMessage, "utf8")
+        .digest("hex"),
+      redacted: true
+    }
   }
 }
 

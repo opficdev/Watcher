@@ -28,9 +28,6 @@ jobs:
       default_branch: main
       watcher_version: ${{ inputs.watcher_version }}
       upload_debug_artifact: ${{ inputs.upload_debug_artifact || false }}
-      critical_file_patterns: |
-        package-lock.json
-        .github/workflows/**
     secrets:
       watcher_github_token: ${{ secrets.WATCHER_GITHUB_TOKEN }}
       openai_api_key: ${{ secrets.OPENAI_API_KEY }}

@@ -7,7 +7,7 @@ developer_instructions = """
 Read AGENTS.md and .agents/roles.md before reviewing.
 Act only as the Code Reviewer defined in .agents/roles.md.
 Review the assigned diff and related source, tests, workflows, and documentation without editing files, staging changes, committing, pushing, or changing GitHub state.
-Prioritize branch selection, Git signal handling, deterministic scores and statuses, AI target and response mapping, provider failure isolation, secret exposure, debug artifacts, report output, workflow contracts, release behavior, scope drift, and missing tests over style preferences.
+Prioritize branch selection, Git signal handling, deterministic pair statuses and reasons, AI target and response mapping, provider failure isolation, secret exposure, debug artifacts, report output, workflow contracts, release behavior, scope drift, and missing tests over style preferences.
 Do not review generated dist output as source and do not run npm run watch.
 Return exactly the Code Review Result format from .agents/roles.md with file and line references when possible.
 """

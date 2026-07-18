@@ -15,8 +15,8 @@ Watcher is a standalone TypeScript/Node automation repository. `package.json`, `
 Read this file before work that changes any of these areas:
 
 - Ownership or dependency direction across `src/branches`, `src/git`, `src/risks`, `src/ai`, `src/reports`, `src/reportChannels`, `src/debug`, or `src/workflows`.
-- Deterministic branch selection, merge signals, risk scores, statuses, reasons, or report results.
-- OpenAI target selection, prompt construction, response validation, failure isolation, or provider batching.
+- Deterministic branch selection, branch 조합, merge signals, graph statuses, reasons, or report results.
+- OpenAI 조합 대상 선택, prompt construction, response validation, failure isolation, or request ordering.
 - GitHub, OpenAI, Discord, filesystem, environment-variable, or child-process boundaries.
 - Reusable workflow inputs, secrets, permissions, source resolution, debug artifacts, or release packaging.
 - Public exports from `src/index.ts`, shared contracts, or README architecture explanations.
@@ -49,8 +49,9 @@ flowchart LR
 	Remote["Remote refs and GitHub metadata"]
 	Collection["Workflow runtime collection"]
 	Selection["Branch selection"]
-	Git["Virtual merge signal and changed hunks"]
-	Risk["Deterministic risk analysis"]
+	Pair["Branch pair construction"]
+	Git["Virtual merge and code context"]
+	Risk["Deterministic conflict graph"]
 	Target["AI target selection and evidence"]
 	OpenAI["Optional OpenAI prediction"]
 	Report["Report construction and Markdown"]
@@ -59,7 +60,8 @@ flowchart LR
 
 	Remote --> Collection
 	Collection --> Selection
-	Selection --> Git
+	Selection --> Pair
+	Pair --> Git
 	Git --> Risk
 	Risk --> Target
 	Target --> OpenAI
@@ -78,40 +80,41 @@ flowchart LR
 
 | Module | Owns | Ask before |
 | --- | --- | --- |
-| `src/branches` | Branch, check, and PR metadata contracts plus base/default exclusion and branch selection | Adding Git execution, risk analysis, report formatting, or provider calls |
+| `src/branches` | Branch, check, and PR metadata contracts plus base/default exclusion, branch selection, and pair construction | Adding Git execution, graph classification, report formatting, or provider calls |
 | `src/git` | Branch fetch, merge-base, virtual merge, changed-file, conflict-file, and merge-failure signals | Moving hunk parsing, GitHub metadata, product risk policy, or report text into this module |
-| `src/risks` | Deterministic score, status, reason, overlap, and precedence policy | Changing score values, thresholds, precedence, or same-input results |
-| `src/ai` | AI target selection, evidence shaping, prompt construction, provider call, response validation, and branch failure isolation | Replacing deterministic results, sending broader source data, changing provider contract, or exposing unvalidated responses |
+| `src/risks` | Deterministic pair graph status, reason, overlap, error, and precedence policy | Changing status classification, reason precedence, or same-input results |
+| `src/ai` | AI pair target selection, evidence shaping, prompt construction, provider call, response validation, and pair failure isolation | Replacing deterministic results, sending broader source data, changing provider contract, or exposing unvalidated responses |
 | `src/reports` | Provider-neutral report model construction and Markdown formatting | Adding transport behavior or leaking internal-only evidence |
 | `src/reportChannels` | Report delivery, Discord chunking, stdout fallback, and transport error redaction | Adding a new channel or changing secret and failure behavior |
 | `src/debug` | Optional redacted diagnostic artifacts | Adding secrets, raw file contents, raw diffs, or unbounded provider data |
-| `src/workflows` | Environment parsing, remote-ref listing, GitHub check and PR metadata collection, diff-hunk parsing, runtime orchestration, and delivery failure propagation | Adding deterministic score policy, AI response policy, report formatting, or channel transport policy |
+| `src/workflows` | Environment parsing, remote-ref listing, GitHub check and PR metadata collection, runtime orchestration, debug artifact composition, and delivery failure propagation | Adding deterministic graph policy, AI response policy, report formatting, or channel transport policy |
 | `src/index.ts` | Deliberate public exports | Expanding the public contract without consumer impact review |
 
 ## Boundary rules
 
-- Keep branch discovery and selection independent from risk scoring.
-- Keep Git signal collection independent from product score policy.
+- Keep branch discovery and selection independent from pair graph classification.
+- Keep Git signal collection independent from graph status and reason policy.
 - Keep deterministic results reproducible for the same normalized input.
-- Keep AI prediction additive. Provider output must not erase or rewrite deterministic possibility results.
-- Select AI targets from deterministic results and skip confirmed conflicts when the current policy requires no provider call.
+- Keep AI prediction additive. Provider output must not erase or rewrite deterministic graph results.
+- Select every `confirmed_conflict` pair and only `potential_overlap` pairs with `same_hunk_overlap` for AI prediction. Skip same-file-only, `clean`, and `error` pairs.
+- Do not create an AI client or call a provider when no pair is selected.
 - Validate provider responses before mapping them into reports.
-- Isolate provider failure by branch and retain deterministic reporting.
+- Run selected pair requests in order, isolate provider failure by pair, and retain deterministic reporting.
 - Keep report construction independent from Discord delivery.
 - Keep debug output optional, redacted, and bounded.
-- Preserve the current `src/workflows/mergeRiskWatch.ts` ownership of remote-ref listing, GitHub metadata collection, hunk parsing, and pipeline composition. Do not add deterministic score, AI response, report formatting, or report channel policy there.
+- Preserve the current `src/workflows/mergeRiskWatch.ts` ownership of remote-ref listing, GitHub metadata collection, pipeline composition, and optional debug artifact writes. Do not add deterministic graph, AI response, report formatting, or report channel policy there.
 
 ## Deterministic and AI decision boundary
 
 ```mermaid
 flowchart TD
-	Evidence["Normalized branch and Git evidence"]
-	Deterministic["Deterministic risk result"]
+	Evidence["Normalized pair and Git evidence"]
+	Deterministic["Deterministic graph edge"]
 	Eligible{"Eligible for AI prediction?"}
 	Skip["Keep deterministic result with skipped status"]
 	Predict["Build bounded evidence and call provider"]
 	Validate{"Response valid?"}
-	Add["Add prediction and recommended actions"]
+	Add["Add pair analysis and resolution"]
 	Fail["Keep deterministic result with failed status"]
 
 	Evidence --> Deterministic
@@ -123,12 +126,12 @@ flowchart TD
 	Validate -->|No| Fail
 ```
 
-Do not let provider output change deterministic scores, statuses, or reasons unless the user explicitly approves a product-contract change and the tests and README are updated together.
+Do not let provider output change deterministic pair statuses or reasons unless the user explicitly approves a product-contract change and the tests and README are updated together.
 
 ## External service boundaries
 
 - GitHub access belongs at branch and Git metadata collection or workflow orchestration boundaries.
-- OpenAI access belongs behind `openAiPredictionClient` and `predictionRunner`; prompt and response contracts remain separately testable.
+- OpenAI access belongs behind `openAiPredictionClient` and `predictionPairRunner`; prompt and response contracts remain separately testable.
 - Discord access belongs behind the report channel abstraction; missing `DISCORD_WEBHOOK_URL` preserves stdout fallback.
 - Tests must replace external providers and report channels with fakes or injected functions and must not call live services.
 - Error messages and debug artifacts must not expose credentials or webhook URLs.
@@ -154,7 +157,7 @@ Do not let provider output change deterministic scores, statuses, or reasons unl
 The runtime processing order is:
 
 ```text
-workflow collection -> branch selection -> virtual merge and hunk evidence -> risks -> AI assistance -> reports -> report channel
+workflow collection -> branch selection -> branch pairs -> virtual merge and code context -> conflict graph -> pair AI assistance -> reports -> report channel
 workflow orchestration writes optional debug artifacts throughout the run
 ```
 
@@ -176,7 +179,7 @@ Shared types should stay with the module that owns their meaning. Do not create 
 
 Stop and ask the user before editing when any of these decisions are not already fixed by the request or current repository contract:
 
-- A score, threshold, signal precedence, branch exclusion, or report status changes.
+- A pair status, reason precedence, branch exclusion, or report status changes.
 - AI becomes authoritative over deterministic results.
 - Additional source, diff, PR, check, prompt, response, or secret data leaves the process or enters debug artifacts.
 - A reusable workflow input, secret, permission, default, trigger, or release resolution rule changes.

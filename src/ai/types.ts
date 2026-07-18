@@ -1,27 +1,15 @@
 import type {
-  BranchComparisonPair,
-  BranchContext
+  BranchComparisonPair
 } from "../branches/types.js"
 import type {
-  GitMergeSignal,
   GitMergeSignalStatus,
   GitMergeTreeConflict,
   MergeCodeContextEvidence
 } from "../git/types.js"
 import type {
-  BranchChangedHunk,
   BranchConflictGraphEdgeReason,
-  BranchConflictGraphEdgeStatus,
-  BranchRisk
+  BranchConflictGraphEdgeStatus
 } from "../risks/types.js"
-
-// AI prediction 생성에 사용할 deterministic 분석 근거 묶음
-export type AiPredictionEvidencePayload = {
-  branch: BranchContext
-  possibility: BranchRisk
-  gitSignal: GitMergeSignal
-  changedHunks: BranchChangedHunk[]
-}
 
 // AI가 분석할 수 있는 확정 conflict와 critical potential overlap 상태
 export type AiPredictionPairTargetStatus = Extract<
@@ -148,17 +136,40 @@ export type AiPredictionPairFailedResult = {
   errorMessage: string
 }
 
+// branch 조합 prompt 생성 시점의 ordered pair와 prompt 정보
+export type AiPredictionPairPromptDebugEvent = {
+  targetPair: BranchComparisonPair
+  prompt: AiPredictionPrompt
+}
+
+// branch 조합 provider response 수신 시점의 ordered pair와 원본 응답
+export type AiPredictionPairResponseDebugEvent = {
+  targetPair: BranchComparisonPair
+  response: unknown
+}
+
+// branch 조합 provider 호출 또는 응답 검증 실패 정보
+export type AiPredictionPairFailureDebugEvent = {
+  targetPair: BranchComparisonPair
+  errorMessage: string
+}
+
+// branch 조합 AI 실행 단계별 debug event를 받는 observer
+export type AiPredictionPairDebugObserver = {
+  onPromptBuilt?(event: AiPredictionPairPromptDebugEvent): void | Promise<void>
+  onResponseReceived?(event: AiPredictionPairResponseDebugEvent): void | Promise<void>
+  onPredictionFailed?(event: AiPredictionPairFailureDebugEvent): void | Promise<void>
+}
+
 // AI provider에 전달할 system/user prompt 묶음
 export type AiPredictionPrompt = {
   systemPrompt: string
   userPrompt: string
-  responseShape?: AiPredictionPromptResponseShape
+  responseShape: AiPredictionPromptResponseShape
 }
 
 // provider가 structured output schema를 고를 때 사용할 응답 형태
 export type AiPredictionPromptResponseShape =
-  | "prediction"
-  | "predictionBatch"
   | "predictionPairConfirmedConflict"
   | "predictionPairCleanOverlap"
 
@@ -167,87 +178,12 @@ export type AiPredictionPromptBuildOptions = {
   systemPrompt?: string
 }
 
+// branch 조합 prompt와 debug observer를 함께 조정하기 위한 실행 설정
+export type AiPredictionPairRunOptions = AiPredictionPromptBuildOptions & {
+  debugObserver?: AiPredictionPairDebugObserver
+}
+
 // provider별 AI 호출 구현이 맞춰야 하는 최소 interface
 export type AiPredictionClient = {
   predict(prompt: AiPredictionPrompt): Promise<unknown>
 }
-
-export type AiPredictionDebugTarget = {
-  branchName: string
-  baseBranch: string
-}
-
-export type AiPredictionPromptDebugEvent = {
-  targetBranches: AiPredictionDebugTarget[]
-  prompt: AiPredictionPrompt
-}
-
-export type AiPredictionResponseDebugEvent = {
-  targetBranches: AiPredictionDebugTarget[]
-  response: unknown
-}
-
-export type AiPredictionFailureDebugEvent = {
-  targetBranches: AiPredictionDebugTarget[]
-  errorMessage: string
-}
-
-export type AiPredictionDebugObserver = {
-  onPromptBuilt?(event: AiPredictionPromptDebugEvent): void | Promise<void>
-  onResponseReceived?(event: AiPredictionResponseDebugEvent): void | Promise<void>
-  onPredictionFailed?(event: AiPredictionFailureDebugEvent): void | Promise<void>
-}
-
-// AI prediction runner가 prompt 생성과 debug 기록을 조정하기 위한 설정
-export type AiPredictionRunOptions = AiPredictionPromptBuildOptions & {
-  debugObserver?: AiPredictionDebugObserver
-}
-
-// branch별 AI prediction 실행 결과
-export type AiPredictionResult =
-  | AiPredictionPredictedResult
-  | AiPredictionSkippedResult
-  | AiPredictionFailedResult
-
-export type AiPredictionPredictedResult = {
-  status: "predicted"
-  branchName: string
-  baseBranch: string
-  prediction: AiPrediction
-}
-
-export type AiPredictionSkippedResult = {
-  status: "skipped"
-  branchName: string
-  baseBranch: string
-  reason: "not_target" | "confirmed_conflict"
-}
-
-export type AiPredictionFailedResult = {
-  status: "failed"
-  branchName: string
-  baseBranch: string
-  errorMessage: string
-}
-
-// AI가 deterministic possibility를 덮어쓰지 않고 추가로 제공하는 예측 결과
-export type AiPrediction = {
-  branchName: string
-  baseBranch: string
-  prediction: string
-  recommendedActions: AiRecommendedAction[]
-}
-
-// AI가 제안하는 다음 action과 그 action이 필요한 근거
-export type AiRecommendedAction = {
-  title: string
-  description: string
-  priority: AiRecommendedActionPriority
-  files?: string[]
-}
-
-// report에서 action 정렬과 표시 강도를 결정하기 위한 우선순위
-export type AiRecommendedActionPriority =
-  | "low"
-  | "medium"
-  | "high"

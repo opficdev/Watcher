@@ -7,7 +7,10 @@ import type {
   RepositoryBranch
 } from "./types.js"
 
-const activeBranchWindowMilliseconds = 14 * 24 * 60 * 60 * 1_000
+export const ACTIVE_BRANCH_WINDOW_DAYS = 14
+
+const activeBranchWindowMilliseconds =
+  ACTIVE_BRANCH_WINDOW_DAYS * 24 * 60 * 60 * 1_000
 const maximumActiveBranchCount = 30
 
 // 제외 사유가 필요 없는 호출자를 위해 선택된 BranchContext 목록만 반환
@@ -93,7 +96,7 @@ function exclusionReasonFor(
   options: BranchSelectionOptions,
   activeBranchCutoff: Date
 ): BranchExclusionReason | undefined {
-  // base, default branch는 비교 기준이므로 감시 대상에서 제외
+  // base branch는 조합에 별도 포함하고 default branch는 감시하지 않으므로 선택에서 제외
   if (branch.name === options.baseBranch) {
     return "base_branch"
   }

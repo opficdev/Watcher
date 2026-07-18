@@ -91,13 +91,12 @@ export function createDefaultAiPredictionClient(
   return new OpenAiPredictionClient(options)
 }
 
-// Watcher가 검증할 AiPrediction shape를 OpenAI structured output schema로 전달
+// Watcher가 검증할 branch 조합 응답 shape를 OpenAI structured output schema로 전달
 function openAiRequestBodyFor(
   prompt: AiPredictionPrompt,
   model: string
 ): Record<string, unknown> {
-  const responseShape = prompt.responseShape ?? "prediction"
-  const responseFormat = responseFormatFor(responseShape)
+  const responseFormat = responseFormatFor(prompt.responseShape)
 
   return {
     model,
@@ -130,11 +129,6 @@ function responseFormatFor(
   schema: Record<string, unknown>
 } {
   switch (responseShape) {
-    case "predictionBatch":
-      return {
-        name: "ai_prediction_batch",
-        schema: aiPredictionBatchSchema()
-      }
     case "predictionPairConfirmedConflict":
       return {
         name: "ai_prediction_pair_confirmed_conflict",
@@ -144,11 +138,6 @@ function responseFormatFor(
       return {
         name: "ai_prediction_pair_clean_overlap",
         schema: aiCleanOverlapSchema()
-      }
-    default:
-      return {
-        name: "ai_prediction",
-        schema: aiPredictionSchema()
       }
   }
 }
@@ -211,44 +200,6 @@ function openAiTextFor(response: OpenAiResponsesApiResponse): string {
   }
 
   return text
-}
-
-// OpenAI가 Watcher prediction batch contract에 맞는 JSON을 반환하도록 요청하는 schema
-function aiPredictionBatchSchema(): Record<string, unknown> {
-  return {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      predictions: {
-        type: "array",
-        items: aiPredictionSchema()
-      }
-    },
-    required: ["predictions"]
-  }
-}
-
-// OpenAI가 Watcher prediction 하나의 contract에 맞는 JSON을 반환하도록 요청하는 schema
-function aiPredictionSchema(): Record<string, unknown> {
-  return {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      branchName: { type: "string" },
-      baseBranch: { type: "string" },
-      prediction: { type: "string" },
-      recommendedActions: {
-        type: "array",
-        items: recommendedActionSchema()
-      }
-    },
-    required: [
-      "branchName",
-      "baseBranch",
-      "prediction",
-      "recommendedActions"
-    ]
-  }
 }
 
 // 확정 conflict 해결 응답을 위한 OpenAI structured output schema
@@ -396,31 +347,5 @@ function stringArraySchema(): Record<string, unknown> {
   return {
     type: "array",
     items: { type: "string" }
-  }
-}
-
-// AI recommended action 하나의 JSON 구조를 OpenAI structured output schema로 표현
-function recommendedActionSchema(): Record<string, unknown> {
-  return {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      title: { type: "string" },
-      description: { type: "string" },
-      priority: {
-        type: "string",
-        enum: ["low", "medium", "high"]
-      },
-      files: {
-        type: "array",
-        items: { type: "string" }
-      }
-    },
-    required: [
-      "title",
-      "description",
-      "priority",
-      "files"
-    ]
   }
 }

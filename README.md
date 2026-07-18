@@ -1,8 +1,8 @@
 # Watcher
 
-Watcher는 consumer repository의 active branch를 감시하고 merge conflict 가능성을 report하는 TypeScript/Node 자동화 도구입니다.
+Watcher는 consumer repository의 active branch 조합을 분석하고 merge risk를 report하는 TypeScript/Node 자동화 도구입니다.
 
-consumer repository는 Watcher 코드를 복사하지 않고 workflow 파일 하나만 추가해 reusable workflow를 호출합니다. Watcher repository는 reusable workflow, deterministic possibility 계산, AI prediction, report channel 구현을 소유합니다.
+consumer repository는 Watcher 코드를 복사하지 않고 workflow 파일 하나만 추가해 reusable workflow를 호출합니다. Watcher repository는 reusable workflow, branch 조합 분석, AI prediction, report channel 구현을 소유합니다.
 
 ## 설치
 
@@ -10,7 +10,7 @@ consumer repository에 workflow 파일 하나를 추가합니다. 전체 예시�
 
 운영 환경에서는 `uses: opficdev/Watcher/.github/workflows/merge-risk-watch.yml@0.1.0`처럼 release tag를 ref로 고정합니다. Watcher는 이 ref를 기준으로 같은 tag의 release asset을 자동으로 다운로드합니다.
 
-예시에서 consumer repository에 맞게 `base_branch`, `default_branch`, `critical_file_patterns`, secret 이름을 조정합니다.
+예시에서 consumer repository에 맞게 `base_branch`, `default_branch`, secret 이름을 조정합니다.
 
 ## Consumer repository secrets
 
@@ -52,17 +52,16 @@ reusable workflow는 다음 input을 받습니다.
 | input | 필수 여부 | 기본값 | 용도 |
 | --- | --- | --- | --- |
 | `repository` | 필수 | 없음 | 감시할 repository. `owner/repo` 형식 |
-| `base_branch` | 필수 | 없음 | merge risk를 비교할 기준 branch |
+| `base_branch` | 필수 | 없음 | 비교 조합에 포함할 기준 branch |
 | `default_branch` | 선택 | 빈 값 | 감시 대상에서 제외할 default branch |
-| `critical_file_patterns` | 선택 | 빈 값 | score에 반영할 critical file wildcard pattern 목록. 줄바꿈으로 구분 |
 | `watcher_version` | 선택 | 빈 값 | 수동 테스트에 사용할 Watcher release tag. 비워두면 workflow ref 기준 |
 | `upload_debug_artifact` | 선택 | `false` | AI prediction 원인 추적용 debug artifact를 consumer workflow run에 업로드할지 여부 |
 
-`critical_file_patterns`에서 `*`는 단일 path segment 내부를 매칭하고 `**`는 path separator를 포함해 매칭합니다.
-
 ## Branch 운영 기준
 
-Watcher는 `base_branch`와 `default_branch`를 제외한 remote branch를 감시 대상으로 수집합니다. branch 이름에 맞춰야 하는 prefix나 regex는 요구하지 않습니다.
+Watcher는 `base_branch`와 `default_branch`를 active branch 선택 대상에서 제외합니다. `base_branch`는 선택된 active branch와 함께 비교 집합에 별도로 포함하고, 이 집합에서 중복 없는 모든 branch 조합을 이름순으로 구성합니다. branch 이름에 맞춰야 하는 prefix나 regex는 요구하지 않습니다.
+
+최근 14일 안에 갱신된 branch를 최근 갱신 순으로 최대 30개까지 선택합니다. 기간을 벗어난 branch와 개수 제한을 넘은 branch는 report의 `Excluded Branches`에 제외 사유와 함께 표시합니다.
 
 Watcher는 merge된 branch를 직접 삭제하지 않습니다. consumer repository의 `Settings` > `General` > `Pull Requests`에서 `Automatically delete head branches` 옵션을 켜야 합니다. 이 옵션을 켜면 merge된 branch가 자동으로 삭제되어 이미 merge된 branch를 계속 감시하는 상황을 줄일 수 있습니다.
 
@@ -83,56 +82,42 @@ release asset에는 실행에 필요한 `dist/src`와 `package.json`이 포함�
 
 branch나 SHA ref로 reusable workflow를 호출하면 개발용 fallback으로 Watcher source를 checkout하고 `npm ci`, `npm run build`를 실행합니다.
 
-## 충돌 가능성 점수화
+## Branch 조합 분석
 
-Watcher는 merge 가능/불가능을 단정하지 않고 branch별 signal을 충돌 가능성 score와 reason으로 변환합니다. 이 값은 같은 입력에 대해 항상 같은 결과가 나와야 하는 기본 판단층입니다.
+Watcher는 `base_branch`와 선택된 active branch 전체에서 중복 없는 모든 조합을 만들고, 각 조합에 virtual merge와 변경 문맥 수집을 수행합니다. 같은 입력은 항상 같은 조합 순서, 상태, reason을 만들어야 합니다.
 
-기본 입력은 branch metadata, git merge signal, 변경 파일, 변경 범위입니다. 변경 범위는 같은 파일 안에서 수정된 line range를 뜻하며 여러 branch가 같은 line range를 수정할수록 conflict 가능성을 높게 봅니다. Git diff에서는 이런 변경 범위를 hunk라고 부르며 Watcher는 같은 파일의 hunk line range가 겹치는지를 비교합니다.
+| status | reason | 의미 |
+| --- | --- | --- |
+| `confirmed_conflict` | `confirmed_conflict` | virtual merge에서 conflict가 확인됨 |
+| `error` | `merge_check_failed` | merge 결과를 수집하지 못함 |
+| `error` | `code_context_failed` | 변경 문맥을 수집하지 못함 |
+| `potential_overlap` | `same_hunk_overlap` | clean merge 조합이 같은 파일의 겹치는 hunk를 수정함 |
+| `potential_overlap` | `same_file_overlap` | clean merge 조합이 같은 파일을 수정함 |
+| `clean` | `clean_merge` | conflict와 변경 겹침이 확인되지 않음 |
 
-| signal | score | 의미 |
-| --- | ---: | --- |
-| `confirmed_conflict` | 100 | virtual merge에서 실제 conflict가 확인됨 |
-| `same_hunk_overlap` | 55 | 여러 branch가 같은 파일의 겹치는 변경 범위를 수정함 |
-| `merge_check_failed` | 40 | fetch, merge-base, virtual merge 확인 단계가 실패함 |
-| `same_file_overlap` | 30 | 여러 branch가 같은 파일을 수정함 |
-| `critical_file_changed` | 25 | 설정한 critical file pattern에 해당하는 파일이 수정됨 |
-| `failed_check` | 20 | branch metadata에 실패한 check가 존재함 |
-| `clean_merge` | 0 | virtual merge에서 conflict가 확인되지 않음 |
+`confirmed_conflict`는 virtual merge 결과를 우선합니다. merge 또는 변경 문맥 수집에 실패하면 해당 조합만 `error`로 격리합니다. clean merge에서는 hunk와 파일 겹침을 reason으로 기록하고, 겹침이 없으면 `clean`으로 분류합니다.
 
-각 branch의 score는 적용된 signal의 점수를 합산하고 최대 100점으로 제한합니다.
-
-| score | status |
-| ---: | --- |
-| 80-100 | `critical` |
-| 50-79 | `high` |
-| 25-49 | `medium` |
-| 0-24 | `low` |
-
-`confirmed_conflict`는 최상위 signal입니다. 이 signal이 있으면 다른 reason을 추가로 합산하지 않고 `critical` risk로 처리합니다.
-
-각 reason은 report에 code, message, score impact, 관련 file, 관련 branch, 관련 check metadata로 표시됩니다. 다만 `same_hunk_overlap`이 있는 branch에서는 중복되는 `same_file_overlap`의 file, branch 목록을 다시 반복하지 않습니다. 이 정보가 AI prediction에 전달되는 정제된 evidence입니다.
+Report의 `Summary`에는 active period, base branch, 발견·감시 branch 수, 비교·clean 조합 수를 표시합니다. 상세 결과는 `Confirmed Conflicts`, `Potential Risks`, `Branch Impact`, `Excluded Branches`, `Merge Errors`로 나눕니다. 확정 conflict와 잠재 위험 항목에는 branch 조합, 상태, commit OID, reason, 관련 파일, conflict type, AI 결과를 표시합니다.
 
 ## AI-assisted prediction
 
-AI prediction은 deterministic possibility score를 대체하지 않습니다. Watcher는 deterministic evidence를 OpenAI API에 전달하고 AI는 실무 관점의 prediction과 recommended actions를 추가합니다.
+AI prediction은 branch 조합의 결정론적 상태와 reason을 대체하지 않습니다. Watcher는 선택된 조합의 제한된 evidence를 OpenAI API에 전달하고 AI 분석과 해결 방안을 추가합니다.
 
 기본 AI provider는 OpenAI Responses API입니다. consumer repository에는 `OPENAI_API_KEY` secret을 설정해야 합니다.
 
-AI prediction 대상은 기본적으로 `critical` possibility입니다. 이미 virtual merge에서 conflict가 확정된 branch는 AI 호출 없이 deterministic report만 사용합니다. 그 외 낮은 status의 branch는 AI 호출을 생략하고 `skipped` 상태로 report에 표시됩니다.
+AI prediction 대상은 모든 `confirmed_conflict` 조합과 `same_hunk_overlap` reason이 있는 `potential_overlap` 조합입니다. `same_file_overlap`만 있는 `potential_overlap` 조합은 호출 대상에서 제외하고 `skipped` 상태로 표시합니다. `clean`은 Summary의 개수로만 집계하고 `error`는 `Merge Errors`에 표시하며 AI 상태를 붙이지 않습니다. 대상 조합이 없으면 AI client를 만들거나 provider를 호출하지 않습니다.
 
-provider 호출량을 줄이기 위해 선택된 branch prediction은 report 단위 batch 요청으로 한 번에 실행합니다.
+선택된 조합은 정렬된 순서대로 하나씩 provider에 요청합니다. 한 조합의 provider 호출이나 응답 검증이 실패해도 다음 조합 분석과 결정론적 report는 유지합니다.
 
 AI prediction 결과는 다음 상태 중 하나입니다.
 
 | status | 의미 |
 | --- | --- |
-| `predicted` | OpenAI API 응답을 검증했고 prediction과 recommended actions를 report에 포함함 |
+| `predicted` | OpenAI API 응답을 검증했고 conflict 또는 overlap 원인, 통합 순서, patch 또는 예방 조치를 report에 포함함 |
 | `skipped` | AI prediction 대상이 아니어서 provider 호출을 생략함 |
-| `failed` | provider 호출이나 응답 검증에 실패해 branch 단위 실패로 격리함 |
+| `failed` | provider 호출이나 응답 검증에 실패해 조합 단위 실패로 격리함 |
 
-AI provider가 실패해도 deterministic possibility report는 유지됩니다. 실패한 branch는 `failed` 상태와 error message를 report에 포함합니다.
-
-Report에는 `Low` section, AI prediction `skipped` 상태, branch `updated` 시각, provider error 요약을 유지합니다. Pull Request metadata는 내부 evidence로만 사용할 수 있으며 Markdown report에는 출력하지 않습니다.
+AI provider가 실패해도 조합의 결정론적 상태와 reason은 유지됩니다. `confirmed_conflict` 분석에는 conflict 원인, merge 또는 rebase 순서, 해결 단계, `Suggested Patch`를 포함합니다. `same_hunk_overlap` 분석에는 overlap 원인, 통합 순서, 예방 조치를 포함합니다.
 
 ## Debug artifact
 
@@ -149,18 +134,17 @@ artifact에는 다음 파일이 포함됩니다.
 
 | 파일 | 내용 |
 | --- | --- |
-| `run.json` | repository, base branch, default branch, critical file patterns, Watcher workflow ref |
+| `run.json` | repository, repository path, base branch, default branch, remote, GitHub API URL, Watcher workflow ref, 생성 시각 |
 | `branch-selection.json` | 수집된 branch, 감시 대상 branch, 제외된 branch와 사유 |
 | `branch-pairs.json` | base branch와 감시 대상 branch 전체의 이름순 비교 조합 |
-| `deterministic-evidence.json` | git merge signal, changed files, changed hunks, check/PR metadata, deterministic risk 결과 |
-| `ai-target-selection.json` | AI 호출 대상 branch와 skipped branch 사유 |
-| `ai-prompt.json` | OpenAI 요청 대상 branch, system prompt, response shape, 코드 원문을 제외한 file·line range·길이·hash·잘림 여부 |
+| `deterministic-evidence.json` | 조합별 merge 결과와 conflict graph |
+| `ai-target-selection.json` | AI 호출 대상 조합과 제외된 조합의 상태·reason |
+| `ai-prompt.json` | OpenAI 요청 대상 조합과 코드 원문을 제외한 file·line range·길이·hash·잘림 여부. prompt가 있을 때만 생성 |
 | `ai-response.json` | provider response와 제안 patch 원문을 제외한 byte length·line count·hunk range |
 | `ai-error.json` | provider 호출 또는 response validation 실패 요약. 실패가 없으면 생성되지 않을 수 있음 |
-| `ai-result.json` | response validation 이후 branch별 AI prediction, skipped, failed 매핑 결과 |
-| `report.md` | 최종 Markdown report |
+| `ai-result.json` | response validation 이후 대상 조합의 `predicted`, `failed` 결과. 대상이 없어도 생성 |
 
-debug artifact에는 `GITHUB_TOKEN`, `WATCHER_GITHUB_TOKEN`, `OPENAI_API_KEY`, `DISCORD_WEBHOOK_URL`을 기록하지 않습니다. raw file content와 raw diff 전문도 포함하지 않습니다.
+`ai-response.json`은 응답이 있을 때만, `ai-error.json`은 실패가 있을 때만 생성합니다. debug artifact에는 `GITHUB_TOKEN`, `WATCHER_GITHUB_TOKEN`, `OPENAI_API_KEY`, `DISCORD_WEBHOOK_URL`을 기록하지 않습니다. raw source, raw patch, provider 오류 원문도 포함하지 않습니다.
 
 ## Report channel
 
@@ -191,8 +175,6 @@ WATCHER_REPOSITORY=owner/repo \
 WATCHER_REPOSITORY_PATH=/path/to/watched-repository \
 WATCHER_BASE_BRANCH=develop \
 WATCHER_DEFAULT_BRANCH=main \
-WATCHER_CRITICAL_FILE_PATTERNS='package-lock.json
-.github/workflows/**' \
 WATCHER_DEBUG_ARTIFACT_DIR=/tmp/watcher-debug \
 GITHUB_TOKEN=fine-grained-pat \
 OPENAI_API_KEY=openai-api-key \
@@ -216,10 +198,9 @@ npm test
 
 | 설정 | 테스트 값 |
 | --- | --- |
-| `base_branch` | 기준 branch. 예: `develop` |
+| `base_branch` | 비교 조합에 포함할 branch. 예: `develop` |
 | `default_branch` | 제외할 default branch. 예: `main` |
 | `watcher_version` | 테스트할 Watcher release tag. 비워두면 workflow ref 기준 |
-| `critical_file_patterns` | 테스트할 critical file pattern. 예: `package-lock.json`, `.github/workflows/**` |
 | `upload_debug_artifact` | 문제 원인 추적이 필요할 때만 `true` |
 
 3. consumer repository secret을 설정합니다.
@@ -242,7 +223,7 @@ Discord 메시지가 정상적으로 도착하면 consumer repository의 예시 
 
 local test는 Watcher 내부 로직이 기대한 입력을 처리하는지 확인합니다. GitHub Actions의 reusable workflow, repository checkout, remote branch fetch, 실제 API 권한, schedule timing은 검증하지 않습니다.
 
-scheduled run은 consumer repository의 실제 remote branch를 fetch하고, `base_branch`와 `default_branch`를 제외한 branch를 대상으로 merge signal과 metadata를 다시 수집합니다. 따라서 local test가 통과해도 consumer repository의 token permission, branch 정리 상태, OpenAI API key, Discord webhook 상태가 잘못되면 scheduled run에서 실패할 수 있습니다.
+scheduled run은 consumer repository의 실제 remote branch를 fetch하고, `base_branch`와 선택된 active branch의 모든 조합을 대상으로 merge signal과 변경 문맥을 다시 수집합니다. `default_branch`는 active branch 선택 대상에서 제외합니다. 따라서 local test가 통과해도 consumer repository의 token permission, branch 정리 상태, OpenAI API key, Discord webhook 상태가 잘못되면 scheduled run에서 실패할 수 있습니다.
 
 ## Troubleshooting
 
@@ -252,7 +233,7 @@ scheduled run은 consumer repository의 실제 remote branch를 fetch하고, `ba
 | checkout 또는 fetch 실패 | `WATCHER_GITHUB_TOKEN`의 Repository access, `Contents: Read-only`, workflow `contents: read` 확인 |
 | PR metadata가 비어 있음 | `WATCHER_GITHUB_TOKEN`의 `Pull requests: Read-only`, commit에 연결된 PR 존재 여부 확인 |
 | check metadata가 비어 있음 | 해당 branch head SHA의 check run 존재 여부 확인 |
-| AI prediction이 `skipped`로 표시됨 | deterministic possibility status가 `critical`인지와 `confirmed_conflict`가 아닌지 확인 |
+| AI prediction이 `skipped`로 표시됨 | 조합이 `confirmed_conflict`인지 또는 `potential_overlap`에 `same_hunk_overlap` reason이 있는지 확인 |
 | AI prediction이 `failed`로 표시됨 | `OPENAI_API_KEY` secret, OpenAI API 응답 형식, rate limit 상태 확인 |
 | Discord 전송이 되지 않음 | `DISCORD_WEBHOOK_URL` secret, Discord incoming webhook URL, webhook channel 권한 확인 |
 | merge된 branch가 계속 감시됨 | GitHub `Automatically delete head branches` 설정과 원격 branch 삭제 상태 확인 |

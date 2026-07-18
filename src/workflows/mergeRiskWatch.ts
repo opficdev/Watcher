@@ -3,29 +3,31 @@ import { fileURLToPath } from "node:url"
 import { resolve } from "node:path"
 import { promisify } from "node:util"
 import { build as buildBranchComparisonPairs } from "../branches/branchPairBuilder.js"
-import { selectWithReasons as selectBranchesWithReasons } from "../branches/branchSelector.js"
+import {
+  ACTIVE_BRANCH_WINDOW_DAYS,
+  selectWithReasons as selectBranchesWithReasons
+} from "../branches/branchSelector.js"
 import { collect as collectGitMergeCodeContextResults } from "../git/gitMergeCodeContextCollector.js"
 import { collect as collectGitMergeTreeResults } from "../git/gitMergeTreeCollector.js"
-import { collectGitMergeSignalFromPairResult } from "../git/gitMergeSignalCollector.js"
 import {
   buildEdges as buildBranchConflictGraphEdges,
   buildGraph as buildBranchConflictGraph
 } from "../risks/conflictGraphBuilder.js"
-import { analyzeGraph } from "../risks/riskAnalyzer.js"
-import { build as buildAiPredictionEvidencePayload } from "../ai/evidenceBuilder.js"
 import { createDefaultAiPredictionClient } from "../ai/openAiPredictionClient.js"
-import { predict as predictMergeRisksWithAi } from "../ai/predictionRunner.js"
-import { select as selectAiPredictionTargets } from "../ai/predictionTargetSelector.js"
-import { build as buildMergeRiskReport } from "../reports/reportBuilder.js"
-import { format as formatMergeRiskReportMarkdown } from "../reports/markdownFormatter.js"
+import { build as buildAiPredictionPairRequests } from "../ai/predictionPairRequestBuilder.js"
+import { predict as predictBranchPairsWithAi } from "../ai/predictionPairRunner.js"
+import { build as buildBranchPairMergeRiskReport } from "../reports/branchPairReportBuilder.js"
+import { format as formatBranchPairMergeRiskReportMarkdown } from "../reports/branchPairMarkdownFormatter.js"
 import { send as sendMergeRiskReport } from "../reportChannels/reportChannel.js"
 import {
-  sanitizeAiPredictionPromptDebugEvent,
-  sanitizeAiPredictionResponseDebugEvent
+  sanitizeAiPredictionPairFailureDebugEvent,
+  sanitizeAiPredictionPairPromptDebugEvent,
+  sanitizeAiPredictionPairResponseDebugEvent
 } from "../debug/aiPredictionArtifact.js"
 import { writerFor as debugArtifactWriterFor } from "../debug/debugArtifact.js"
 import type {
-  AiPredictionEvidencePayload
+  AiPredictionPairEvidencePayload,
+  AiPredictionPairResult
 } from "../ai/types.js"
 import type {
   BranchCheckMetadata,
@@ -33,8 +35,7 @@ import type {
   RepositoryBranch
 } from "../branches/types.js"
 import type {
-  BranchChangedHunk,
-  BranchRiskAnalysisInput
+  BranchConflictGraphEdge
 } from "../risks/types.js"
 
 const execFileAsync = promisify(execFile)
@@ -44,7 +45,6 @@ type MergeRiskWatchOptions = {
   repositoryPath: string
   baseBranch: string
   defaultBranch?: string
-  criticalFilePatterns: string[]
   remoteName: string
   githubApiUrl: string
   githubToken?: string
@@ -99,7 +99,6 @@ export function optionsFromEnvironment(
     repositoryPath,
     baseBranch,
     defaultBranch,
-    criticalFilePatterns: patternsFrom(optionalEnv(env, "WATCHER_CRITICAL_FILE_PATTERNS")),
     remoteName: optionalEnv(env, "WATCHER_REMOTE_NAME") ?? "origin",
     githubApiUrl: optionalEnv(env, "WATCHER_GITHUB_API_URL") ?? "https://api.github.com",
     githubToken: optionalEnv(env, "GITHUB_TOKEN"),
@@ -113,7 +112,7 @@ export async function runFromEnvironment(): Promise<void> {
   await run(optionsFromEnvironment())
 }
 
-// local git checkout에서 branch signal을 수집하고 report channel로 전송
+// local git checkout에서 branch 조합을 분석하고 report channel로 전송
 export async function run(options: MergeRiskWatchOptions): Promise<void> {
   const generatedAt = new Date()
   const debugArtifactWriter = debugArtifactWriterFor(options.debugArtifactDir)
@@ -123,7 +122,6 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
     repositoryPath: options.repositoryPath,
     baseBranch: options.baseBranch,
     defaultBranch: options.defaultBranch,
-    criticalFilePatterns: options.criticalFilePatterns,
     remoteName: options.remoteName,
     githubApiUrl: options.githubApiUrl,
     workflowRef: options.workflowRef,
@@ -150,11 +148,12 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
     codeContextResults
   )
   const graph = buildBranchConflictGraph(options.baseBranch, branches, edges)
-  const pairResultByKey = new Map(pairResults.map(result => [
-    branchPairKey(result.pair.leftBranchName, result.pair.rightBranchName),
-    result
-  ]))
-  const inputs: BranchRiskAnalysisInput[] = []
+  const payloads = buildAiPredictionPairRequests(
+    graph.edges,
+    pairResults,
+    codeContextResults
+  )
+  const targetPairKeys = new Set(payloads.map(payload => pairKeyFor(payload.pair)))
 
   await debugArtifactWriter?.writeJson("branch-selection.json", {
     repositoryBranches,
@@ -164,93 +163,86 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
   await debugArtifactWriter?.writeJson("branch-pairs.json", {
     pairs
   })
+  await debugArtifactWriter?.writeJson("deterministic-evidence.json", {
+    pairResults,
+    graph
+  })
+  await debugArtifactWriter?.writeJson("ai-target-selection.json", {
+    targetPairs: payloads.map(aiTargetArtifactFor),
+    skippedPairs: graph.edges
+      .filter(edge => !targetPairKeys.has(pairKeyFor(edge.pair)))
+      .map(aiSkippedArtifactFor)
+  })
 
-  for (const branch of branches) {
-    const pairResult = pairResultByKey.get(branchPairKey(
-      options.baseBranch,
-      branch.name
-    ))
-    const gitSignal = await collectGitMergeSignalFromPairResult(branch, pairResult, {
-      repositoryPath: options.repositoryPath,
-      remoteName: options.remoteName
-    })
-    const changedHunks = gitSignal.mergeBaseSha
-      ? await collectChangedHunks({
-        repositoryPath: options.repositoryPath,
-        remoteName: options.remoteName,
-        branchName: branch.name,
-        mergeBaseSha: gitSignal.mergeBaseSha
-      })
-      : []
+  const promptEvents: Array<ReturnType<
+    typeof sanitizeAiPredictionPairPromptDebugEvent
+  >> = []
+  const responseEvents: Array<ReturnType<
+    typeof sanitizeAiPredictionPairResponseDebugEvent
+  >> = []
+  const failureEvents: Array<ReturnType<
+    typeof sanitizeAiPredictionPairFailureDebugEvent
+  >> = []
+  const predictions = payloads.length === 0
+    ? []
+    : await predictBranchPairsWithAi(
+      payloads,
+      createDefaultAiPredictionClient(),
+      {
+        debugObserver: debugArtifactWriter
+          ? {
+            // 생성된 pair prompt에서 코드 원문을 제거한 표현만 누적
+            onPromptBuilt: event => {
+              promptEvents.push(sanitizeAiPredictionPairPromptDebugEvent(event))
+            },
+            // 받은 pair response에서 patch 원문을 제거한 표현만 누적
+            onResponseReceived: event => {
+              responseEvents.push(sanitizeAiPredictionPairResponseDebugEvent(event))
+            },
+            // pair prediction 실패 원문을 제거한 표현만 누적
+            onPredictionFailed: event => {
+              failureEvents.push(
+                sanitizeAiPredictionPairFailureDebugEvent(event)
+              )
+            }
+          }
+          : undefined
+      }
+    )
 
-    inputs.push({
-      branch,
-      gitSignal,
-      changedHunks
+  if (debugArtifactWriter && 0 < promptEvents.length) {
+    await debugArtifactWriter.writeJson("ai-prompt.json", {
+      events: promptEvents
     })
   }
 
-  const risks = analyzeGraph(graph, inputs, {
-    criticalFilePatterns: options.criticalFilePatterns
-  })
-  const evidencePayloads = inputs.map((input, index) =>
-    buildAiPredictionEvidencePayload(input, risks[index]!)
-  )
-  const aiTargets = selectAiPredictionTargets(evidencePayloads)
-  const aiTargetSet = new Set(aiTargets)
+  if (debugArtifactWriter && 0 < responseEvents.length) {
+    await debugArtifactWriter.writeJson("ai-response.json", {
+      events: responseEvents
+    })
+  }
 
-  await debugArtifactWriter?.writeJson("deterministic-evidence.json", {
-    inputs,
-    risks,
-    evidencePayloads
-  })
-  await debugArtifactWriter?.writeJson("ai-target-selection.json", {
-    targetBranches: aiTargets.map(aiDebugTargetFor),
-    skippedBranches: evidencePayloads
-      .filter(payload => !aiTargetSet.has(payload))
-      .map(payload => ({
-        ...aiDebugTargetFor(payload),
-        reason: aiSkippedReasonFor(payload)
-      }))
-  })
+  if (debugArtifactWriter && 0 < failureEvents.length) {
+    await debugArtifactWriter.writeJson("ai-error.json", {
+      events: failureEvents
+    })
+  }
 
-  const predictions = await predictMergeRisksWithAi(
-    evidencePayloads,
-    createDefaultAiPredictionClient(),
-    {
-      debugObserver: debugArtifactWriter
-        ? {
-          // 생성된 AI prompt에서 코드 원문을 제거한 표현만 debug artifact로 기록
-          onPromptBuilt: event => debugArtifactWriter.writeJson(
-            "ai-prompt.json",
-            sanitizeAiPredictionPromptDebugEvent(event)
-          ),
-          // 받은 AI response에서 제안 patch 원문을 제거한 표현만 debug artifact로 기록
-          onResponseReceived: event => debugArtifactWriter.writeJson(
-            "ai-response.json",
-            sanitizeAiPredictionResponseDebugEvent(event)
-          ),
-          // AI prediction 실패 정보를 debug artifact로 기록
-          onPredictionFailed: event => debugArtifactWriter.writeJson("ai-error.json", event)
-        }
-        : undefined
-    }
-  )
   await debugArtifactWriter?.writeJson("ai-result.json", {
-    predictions
+    predictions: predictions.map(aiResultArtifactFor)
   })
 
-  const report = buildMergeRiskReport(risks.map((risk, index) => ({
-    risk,
-    branch: inputs[index]!.branch,
-    aiPrediction: predictions[index]
-  })), options.baseBranch, {
-    generatedAt
+  const report = buildBranchPairMergeRiskReport({
+    generatedAt,
+    activeBranchWindowDays: ACTIVE_BRANCH_WINDOW_DAYS,
+    discoveredBranchCount: repositoryBranches.length,
+    watchedBranches: branches,
+    excludedBranches: branchSelection.excluded,
+    graph,
+    mergeResults: pairResults,
+    aiResults: predictions
   })
-  const markdown = formatMergeRiskReportMarkdown(report)
-
-  await debugArtifactWriter?.writeText("report.md", markdown)
-
+  const markdown = formatBranchPairMergeRiskReportMarkdown(report)
   const result = await sendMergeRiskReport({
     markdown
   })
@@ -260,29 +252,62 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
   }
 }
 
-// 방향과 무관하게 base 포함 pair 결과를 찾을 식별자를 구성
-function branchPairKey(branchName: string, otherBranchName: string): string {
-  return branchName < otherBranchName
-    ? `${branchName}\u0000${otherBranchName}`
-    : `${otherBranchName}\u0000${branchName}`
-}
-
-// AI 대상 선택 artifact에 기록할 branch 식별 정보만 추출
-function aiDebugTargetFor(payload: AiPredictionEvidencePayload): {
-  branchName: string
-  baseBranch: string
+// AI 대상 artifact에 ordered pair와 deterministic 상태만 기록
+function aiTargetArtifactFor(payload: AiPredictionPairEvidencePayload): {
+  pair: AiPredictionPairEvidencePayload["pair"]
+  status: AiPredictionPairEvidencePayload["targetStatus"]
 } {
   return {
-    branchName: payload.branch.name,
-    baseBranch: payload.branch.baseBranch
+    pair: payload.pair,
+    status: payload.targetStatus
   }
 }
 
-// AI prediction 제외 branch의 deterministic 제외 사유를 분류
-function aiSkippedReasonFor(payload: AiPredictionEvidencePayload): "not_target" | "confirmed_conflict" {
-  return payload.possibility.reasons.some(reason => reason.code === "confirmed_conflict")
-    ? "confirmed_conflict"
-    : "not_target"
+// AI 대상이 아닌 edge의 상태와 reason code만 기록
+function aiSkippedArtifactFor(edge: BranchConflictGraphEdge): {
+  pair: BranchConflictGraphEdge["pair"]
+  status: BranchConflictGraphEdge["status"]
+  reasons: Array<BranchConflictGraphEdge["reasons"][number]["code"]>
+  reason: "not_target"
+} {
+  return {
+    pair: edge.pair,
+    status: edge.status,
+    reasons: edge.reasons.map(reason => reason.code),
+    reason: "not_target"
+  }
+}
+
+// validated pair 결과에서 patch와 실패 원문을 제거한 artifact를 구성
+function aiResultArtifactFor(result: AiPredictionPairResult): unknown {
+  if (result.status === "failed") {
+    const failure = sanitizeAiPredictionPairFailureDebugEvent({
+      targetPair: result.pair,
+      errorMessage: result.errorMessage
+    })
+
+    return {
+      status: result.status,
+      pair: result.pair,
+      error: failure.error
+    }
+  }
+
+  return {
+    ...result,
+    response: sanitizeAiPredictionPairResponseDebugEvent({
+      targetPair: result.pair,
+      response: result.response
+    }).response
+  }
+}
+
+// 좌우 branch 순서를 보존하는 artifact 선택 key를 구성
+function pairKeyFor(pair: {
+  leftBranchName: string
+  rightBranchName: string
+}): string {
+  return `${pair.leftBranchName}\u0000${pair.rightBranchName}`
 }
 
 // remote tracking branch 목록을 BranchSource로 제공
@@ -389,51 +414,6 @@ function warningMessageFor(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-// git diff hunk header를 BranchChangedHunk 목록으로 변환
-async function collectChangedHunks(input: {
-  repositoryPath: string
-  remoteName: string
-  branchName: string
-  mergeBaseSha: string
-}): Promise<BranchChangedHunk[]> {
-  const diff = await gitOutput(input.repositoryPath, [
-    "diff",
-    "--unified=0",
-    input.mergeBaseSha,
-    `refs/remotes/${input.remoteName}/${input.branchName}`
-  ])
-  const hunks: BranchChangedHunk[] = []
-  let filePath: string | undefined
-
-  for (const line of diff.split("\n")) {
-    if (line.startsWith("diff --git ")) {
-      filePath = undefined
-      continue
-    }
-
-    if (line.startsWith("+++ b/")) {
-      filePath = line.slice("+++ b/".length)
-      continue
-    }
-
-    if (line === "+++ /dev/null") {
-      filePath = undefined
-      continue
-    }
-
-    if (!filePath || !line.startsWith("@@ ")) {
-      continue
-    }
-
-    const hunk = changedHunkFrom(line, filePath)
-    if (hunk) {
-      hunks.push(hunk)
-    }
-  }
-
-  return hunks
-}
-
 // raw git line을 remote branch metadata로 변환
 function remoteBranchLineFrom(line: string): RemoteBranchLine {
   const [ref = "", sha = "", author, rawUpdatedAt] = line.split("\t")
@@ -451,24 +431,6 @@ function remoteBranchLineFrom(line: string): RemoteBranchLine {
 function branchNameFrom(ref: string, remoteName: string): string {
   const prefix = `${remoteName}/`
   return ref.startsWith(prefix) ? ref.slice(prefix.length) : ref
-}
-
-// git diff hunk header의 새 파일 line range를 추출
-function changedHunkFrom(line: string, filePath: string): BranchChangedHunk | undefined {
-  const match = line.match(/@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/)
-  if (!match) {
-    return undefined
-  }
-
-  const startLine = Number(match[1])
-  const lineCount = Number(match[2] ?? "1")
-  const endLine = startLine + Math.max(lineCount, 1) - 1
-
-  return {
-    filePath,
-    startLine,
-    endLine
-  }
 }
 
 // owner/repo 형식의 repository 입력을 REST API path segment로 분리
@@ -522,14 +484,6 @@ function githubUrlFor(
   }
 
   return url.toString()
-}
-
-// 줄바꿈으로 전달된 critical file pattern 값을 정리
-function patternsFrom(value: string | undefined): string[] {
-  return value
-    ?.split(/\r?\n/)
-    .map(pattern => pattern.trim())
-    .filter(Boolean) ?? []
 }
 
 // stdout을 단일 문자열로 반환하는 git command helper
