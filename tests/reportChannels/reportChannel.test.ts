@@ -127,12 +127,14 @@ test("redacts discord webhook url from thrown errors", async () => {
 
 // 중간 request 실패에 branch 조합과 연속된 조각 번호를 포함하는지 확인
 test("reports the branch pair and fragment number for a middle webhook failure", async () => {
-  const fetcher = fetchSequenceSpy([
-    { ok: true, status: 204 },
-    { ok: true, status: 204 },
-    { ok: false, status: 500 },
-    { ok: true, status: 204 }
-  ])
+  const fetcher = fetchSpy({}, {
+    outcomes: [
+      { ok: true, status: 204 },
+      { ok: true, status: 204 },
+      { ok: false, status: 500 },
+      { ok: true, status: 204 }
+    ]
+  })
   const result = await sendMergeRiskReport({
     markdown: reportWithTwoPairFragments()
   }, {
@@ -151,12 +153,14 @@ test("reports the branch pair and fragment number for a middle webhook failure",
 // fetch 예외에도 실패 조각 문맥을 유지하면서 webhook URL을 제거하는지 확인
 test("reports the pair fragment and redacts webhook url from a fetch error", async () => {
   const webhookUrl = "https://discord.test/secret-token"
-  const fetcher = fetchSequenceSpy([
-    { ok: true, status: 204 },
-    { ok: true, status: 204 },
-    new Error(`request failed for ${webhookUrl}`),
-    { ok: true, status: 204 }
-  ])
+  const fetcher = fetchSpy({}, {
+    outcomes: [
+      { ok: true, status: 204 },
+      { ok: true, status: 204 },
+      new Error(`request failed for ${webhookUrl}`),
+      { ok: true, status: 204 }
+    ]
+  })
   const result = await sendMergeRiskReport({
     markdown: reportWithTwoPairFragments()
   }, {
@@ -357,6 +361,10 @@ function fetchSpy(
   options: {
     ok?: boolean
     status?: number
+    outcomes?: Array<{
+      ok: boolean
+      status: number
+    } | Error>
   } = {}
 ): FetchSpy {
   const requests: FetchSpy["requests"] = []
@@ -368,46 +376,20 @@ function fetchSpy(
       url: String(input),
       body: JSON.parse(String(init?.body)) as { content: string }
     })
+    const outcome = options.outcomes?.[requests.length - 1]
 
-    return {
-      ok: options.ok ?? true,
-      status: options.status ?? 204,
-      json: async () => body
-    } as Response
-  }) as FetchSpy
-
-  spy.requests = requests
-  return spy
-}
-
-function fetchSequenceSpy(
-  results: Array<{
-    ok: boolean
-    status: number
-  } | Error>
-): FetchSpy {
-  const requests: FetchSpy["requests"] = []
-  const spy = (async (
-    input: string | URL | Request,
-    init?: RequestInit
-  ): Promise<Response> => {
-    requests.push({
-      url: String(input),
-      body: JSON.parse(String(init?.body)) as { content: string }
-    })
-    const result = results[requests.length - 1]
-
-    if (!result) {
+    if (options.outcomes && !outcome) {
       throw new Error("Unexpected fetch request")
     }
 
-    if (result instanceof Error) {
-      throw result
+    if (outcome instanceof Error) {
+      throw outcome
     }
 
     return {
-      ok: result.ok,
-      status: result.status
+      ok: outcome?.ok ?? options.ok ?? true,
+      status: outcome?.status ?? options.status ?? 204,
+      json: async () => body
     } as Response
   }) as FetchSpy
 
