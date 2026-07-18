@@ -38,7 +38,7 @@ test("creates OpenAI client as default AI prediction client", async () => {
 
   const response = await client.predict(prompt())
 
-  assert.deepEqual(response, validPrediction())
+  assert.deepEqual(response, validConfirmedConflictResponse())
 })
 
 // Watcher prompt가 OpenAI Responses API payload로 변환되는지 확인
@@ -75,49 +75,10 @@ test("sends prompt to OpenAI responses endpoint", async () => {
   assert.equal(body.input[0]?.role, "developer")
   assert.equal(body.input[0]?.content, "Return JSON only.")
   assert.equal(body.input[1]?.role, "user")
-  assert.equal(body.input[1]?.content, "{\"branch\":\"feature/a\"}")
+  assert.equal(body.input[1]?.content, "{\"pair\":{\"leftBranchName\":\"feature/a\",\"rightBranchName\":\"feature/b\"}}")
   assert.equal(body.text.format.type, "json_schema")
-  assert.equal(body.text.format.name, "ai_prediction")
+  assert.equal(body.text.format.name, "ai_prediction_pair_confirmed_conflict")
   assert.equal(body.text.format.strict, true)
-})
-
-// batch prompt는 OpenAI structured output schema도 predictions 배열로 요청하는지 확인
-test("sends batch response schema to OpenAI", async () => {
-  const fetcher = fetchSpy(validOpenAiBatchResponse())
-  const client = new OpenAiPredictionClient({
-    apiKey: "openai-key",
-    fetch: fetcher
-  })
-
-  await client.predict(batchPrompt())
-
-  const request = fetcher.requests[0]
-  const body = JSON.parse(request?.init.body as string) as {
-    text: {
-      format: {
-        name: string
-        schema: {
-          additionalProperties?: boolean
-          properties: {
-            predictions?: {
-              items?: {
-                additionalProperties?: boolean
-                properties?: Record<string, unknown>
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  assert.equal(body.text.format.name, "ai_prediction_batch")
-  assert.equal(body.text.format.schema.additionalProperties, false)
-  assert.notEqual(body.text.format.schema.properties.predictions, undefined)
-  const predictionSchema = body.text.format.schema.properties.predictions?.items
-  assert.equal(predictionSchema?.additionalProperties, false)
-  assert.equal(predictionSchema?.properties?.confidence, undefined)
-  assert.equal(predictionSchema?.properties?.falsePositiveNotes, undefined)
 })
 
 // 확정 conflict 요청이 patch 전용 schema를 사용하는지 확인
@@ -128,7 +89,7 @@ test("sends confirmed conflict pair response schema to OpenAI", async () => {
     fetch: spy
   })
 
-  await client.predict(confirmedConflictPairPrompt())
+  await client.predict(prompt())
 
   const body = JSON.parse(String(spy.requests[0]?.init.body)) as PairRequestBody
   const schema = body.text.format.schema
@@ -164,7 +125,7 @@ test("sends clean overlap pair response schema to OpenAI", async () => {
   assert.equal(schema.properties.preventiveActions?.minItems, 1)
 })
 
-// OpenAI HTTP 실패가 branch 단위 failed result로 격리될 수 있도록 Error로 노출되는지 확인
+// OpenAI HTTP 실패가 branch 조합 failed result로 격리될 수 있도록 Error로 노출되는지 확인
 test("throws when OpenAI request fails", async () => {
   const client = new OpenAiPredictionClient({
     apiKey: "openai-key",
@@ -281,21 +242,6 @@ function fetchSpy(
 function prompt(): AiPredictionPrompt {
   return {
     systemPrompt: "Return JSON only.",
-    userPrompt: "{\"branch\":\"feature/a\"}"
-  }
-}
-
-function batchPrompt(): AiPredictionPrompt {
-  return {
-    systemPrompt: "Return JSON only.",
-    userPrompt: "{\"branches\":[{\"branch\":\"feature/a\"}]}",
-    responseShape: "predictionBatch"
-  }
-}
-
-function confirmedConflictPairPrompt(): AiPredictionPrompt {
-  return {
-    systemPrompt: "Return confirmed conflict JSON only.",
     userPrompt: "{\"pair\":{\"leftBranchName\":\"feature/a\",\"rightBranchName\":\"feature/b\"}}",
     responseShape: "predictionPairConfirmedConflict"
   }
@@ -314,31 +260,35 @@ function validOpenAiResponse(): unknown {
   return {
     output: [{
       content: [{
-        text: JSON.stringify(validPrediction())
+        text: JSON.stringify(validConfirmedConflictResponse())
       }]
     }]
   }
 }
 
-function validOpenAiBatchResponse(): unknown {
+// Watcher branch 조합 prediction schema를 만족하는 parsed JSON fixture
+function validConfirmedConflictResponse(): unknown {
   return {
-    output_text: JSON.stringify({
-      predictions: [validPrediction()]
-    })
-  }
-}
-
-// Watcher AI prediction schema를 만족하는 parsed JSON fixture
-function validPrediction(): unknown {
-  return {
-    branchName: "feature/a",
-    baseBranch: "main",
-    prediction: "shared file 변경이 겹쳐 rebase 확인이 필요함",
-    recommendedActions: [{
-      title: "base branch rebase",
-      description: "shared file 변경을 먼저 rebase해 실제 conflict 여부를 확인함",
-      priority: "high",
+    kind: "confirmed_conflict",
+    pair: {
+      leftBranchName: "feature/a",
+      rightBranchName: "feature/b"
+    },
+    conflictCause: {
+      summary: "shared file conflict",
       files: ["src/shared.ts"]
+    },
+    integrationOrder: {
+      strategy: "merge",
+      firstBranchName: "feature/a",
+      secondBranchName: "feature/b",
+      reason: "resolve shared changes",
+      steps: ["merge feature/a", "merge feature/b"]
+    },
+    patches: [{
+      filePath: "src/shared.ts",
+      patch: "@@ -1 +1 @@",
+      reason: "resolve conflict"
     }]
   }
 }

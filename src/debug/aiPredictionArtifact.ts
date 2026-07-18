@@ -1,25 +1,5 @@
 import { createHash } from "node:crypto"
 
-type AiPredictionPromptDebugEventInput = {
-  targetBranches: Array<{
-    branchName: string
-    baseBranch: string
-  }>
-  prompt: {
-    systemPrompt: string
-    userPrompt: string
-    responseShape?: string
-  }
-}
-
-type AiPredictionResponseDebugEventInput = {
-  targetBranches: Array<{
-    branchName: string
-    baseBranch: string
-  }>
-  response: unknown
-}
-
 type AiPredictionPairPromptDebugEventInput = {
   targetPair: {
     leftBranchName: string
@@ -28,7 +8,7 @@ type AiPredictionPairPromptDebugEventInput = {
   prompt: {
     systemPrompt: string
     userPrompt: string
-    responseShape?: string
+    responseShape: string
   }
 }
 
@@ -48,26 +28,6 @@ type AiPredictionPairFailureDebugEventInput = {
   errorMessage: string
 }
 
-export type AiPredictionPromptDebugArtifact = {
-  targetBranches: Array<{
-    branchName: string
-    baseBranch: string
-  }>
-  prompt: {
-    systemPrompt: string
-    userPrompt: string
-    responseShape?: string
-  }
-}
-
-export type AiPredictionResponseDebugArtifact = {
-  targetBranches: Array<{
-    branchName: string
-    baseBranch: string
-  }>
-  response: unknown
-}
-
 export type AiPredictionPairPromptDebugArtifact = {
   targetPair: {
     leftBranchName: string
@@ -76,7 +36,7 @@ export type AiPredictionPairPromptDebugArtifact = {
   prompt: {
     systemPrompt: string
     userPrompt: string
-    responseShape?: string
+    responseShape: string
   }
 }
 
@@ -100,38 +60,6 @@ export type AiPredictionPairFailureDebugArtifact = {
   }
 }
 
-// OpenAI에 전달된 prompt event에서 consumer repository 코드 원문만 metadata로 치환
-export function sanitizeAiPredictionPromptDebugEvent(
-  event: AiPredictionPromptDebugEventInput
-): AiPredictionPromptDebugArtifact {
-  return {
-    targetBranches: event.targetBranches.map(target => ({
-      branchName: target.branchName,
-      baseBranch: target.baseBranch
-    })),
-    prompt: {
-      systemPrompt: event.prompt.systemPrompt,
-      userPrompt: sanitizedUserPromptFor(event.prompt.userPrompt),
-      ...(event.prompt.responseShape
-        ? { responseShape: event.prompt.responseShape }
-        : {})
-    }
-  }
-}
-
-// provider response에서 제안 patch 원문만 크기와 hunk metadata로 치환
-export function sanitizeAiPredictionResponseDebugEvent(
-  event: AiPredictionResponseDebugEventInput
-): AiPredictionResponseDebugArtifact {
-  return {
-    targetBranches: event.targetBranches.map(target => ({
-      branchName: target.branchName,
-      baseBranch: target.baseBranch
-    })),
-    response: sanitizedResponseValueFor(event.response)
-  }
-}
-
 // pair prompt event의 ordered targetPair를 유지하고 코드 원문을 metadata로 치환
 export function sanitizeAiPredictionPairPromptDebugEvent(
   event: AiPredictionPairPromptDebugEventInput
@@ -144,9 +72,7 @@ export function sanitizeAiPredictionPairPromptDebugEvent(
     prompt: {
       systemPrompt: event.prompt.systemPrompt,
       userPrompt: sanitizedUserPromptFor(event.prompt.userPrompt),
-      ...(event.prompt.responseShape
-        ? { responseShape: event.prompt.responseShape }
-        : {})
+      responseShape: event.prompt.responseShape
     }
   }
 }
