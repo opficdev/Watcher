@@ -40,6 +40,14 @@ type AiPredictionPairResponseDebugEventInput = {
   response: unknown
 }
 
+type AiPredictionPairFailureDebugEventInput = {
+  targetPair: {
+    leftBranchName: string
+    rightBranchName: string
+  }
+  errorMessage: string
+}
+
 export type AiPredictionPromptDebugArtifact = {
   targetBranches: Array<{
     branchName: string
@@ -78,6 +86,18 @@ export type AiPredictionPairResponseDebugArtifact = {
     rightBranchName: string
   }
   response: unknown
+}
+
+export type AiPredictionPairFailureDebugArtifact = {
+  targetPair: {
+    leftBranchName: string
+    rightBranchName: string
+  }
+  error: {
+    messageByteLength: number
+    messageHash: string
+    redacted: true
+  }
 }
 
 // OpenAI에 전달된 prompt event에서 consumer repository 코드 원문만 metadata로 치환
@@ -141,6 +161,25 @@ export function sanitizeAiPredictionPairResponseDebugEvent(
       rightBranchName: event.targetPair.rightBranchName
     },
     response: sanitizedResponseValueFor(event.response)
+  }
+}
+
+// pair 실패 원문을 재현할 수 없는 크기와 hash metadata로 치환
+export function sanitizeAiPredictionPairFailureDebugEvent(
+  event: AiPredictionPairFailureDebugEventInput
+): AiPredictionPairFailureDebugArtifact {
+  return {
+    targetPair: {
+      leftBranchName: event.targetPair.leftBranchName,
+      rightBranchName: event.targetPair.rightBranchName
+    },
+    error: {
+      messageByteLength: Buffer.byteLength(event.errorMessage, "utf8"),
+      messageHash: createHash("sha256")
+        .update(event.errorMessage, "utf8")
+        .digest("hex"),
+      redacted: true
+    }
   }
 }
 

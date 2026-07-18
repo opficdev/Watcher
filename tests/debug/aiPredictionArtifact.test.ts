@@ -2,6 +2,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
 import {
+  sanitizeAiPredictionPairFailureDebugEvent,
   sanitizeAiPredictionPairPromptDebugEvent,
   sanitizeAiPredictionPairResponseDebugEvent,
   sanitizeAiPredictionPromptDebugEvent,
@@ -246,4 +247,31 @@ test("sanitizes pair AI response debug event", () => {
   })
   assert.doesNotMatch(JSON.stringify(artifact), /pairSourceMarker/)
   assert.equal(event.response.patches[0]?.patch, patch)
+})
+
+// pair AI 실패 원문을 저장하지 않고 metadata만 유지하는지 확인
+test("redacts pair AI failure error message", () => {
+  const errorMessage = "OpenAI failure echoed RAW_PATCH_MARKER"
+  const artifact = sanitizeAiPredictionPairFailureDebugEvent({
+    targetPair: {
+      leftBranchName: "feature/left",
+      rightBranchName: "feature/right"
+    },
+    errorMessage
+  })
+
+  assert.deepEqual(artifact, {
+    targetPair: {
+      leftBranchName: "feature/left",
+      rightBranchName: "feature/right"
+    },
+    error: {
+      messageByteLength: Buffer.byteLength(errorMessage, "utf8"),
+      messageHash: createHash("sha256")
+        .update(errorMessage, "utf8")
+        .digest("hex"),
+      redacted: true
+    }
+  })
+  assert.doesNotMatch(JSON.stringify(artifact), /RAW_PATCH_MARKER/)
 })
