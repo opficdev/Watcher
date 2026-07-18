@@ -96,7 +96,7 @@ test("returns failure when discord webhook responds with error", async () => {
   assert.deepEqual(result, {
     ok: false,
     target: "discord",
-    errorMessage: "Discord webhook request failed with status 500"
+    errorMessage: "Discord webhook request for report fragment 1 failed with status 500"
   })
 })
 
@@ -113,12 +113,72 @@ test("redacts discord webhook url from thrown errors", async () => {
   assert.equal(result.target, "discord")
   assert.match(
     result.ok ? "" : result.errorMessage,
+    /^Discord webhook request for report fragment 1 failed:/
+  )
+  assert.match(
+    result.ok ? "" : result.errorMessage,
     /\[REDACTED_DISCORD_WEBHOOK_URL\]/
   )
   assert.doesNotMatch(
     result.ok ? "" : result.errorMessage,
     /secret-token/
   )
+})
+
+// 중간 request 실패에 branch 조합과 연속된 조각 번호를 포함하는지 확인
+test("reports the branch pair and fragment number for a middle webhook failure", async () => {
+  const fetcher = fetchSequenceSpy([
+    { ok: true, status: 204 },
+    { ok: true, status: 204 },
+    { ok: false, status: 500 },
+    { ok: true, status: 204 }
+  ])
+  const result = await sendMergeRiskReport({
+    markdown: reportWithTwoPairFragments()
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    fetch: fetcher
+  })
+
+  assert.deepEqual(result, {
+    ok: false,
+    target: "discord",
+    errorMessage: "Discord webhook request for pair `feature/a` ↔ `main` fragment 2 failed with status 500"
+  })
+  assert.equal(fetcher.requests.length, 3)
+})
+
+// fetch 예외에도 실패 조각 문맥을 유지하면서 webhook URL을 제거하는지 확인
+test("reports the pair fragment and redacts webhook url from a fetch error", async () => {
+  const webhookUrl = "https://discord.test/secret-token"
+  const fetcher = fetchSequenceSpy([
+    { ok: true, status: 204 },
+    { ok: true, status: 204 },
+    new Error(`request failed for ${webhookUrl}`),
+    { ok: true, status: 204 }
+  ])
+  const result = await sendMergeRiskReport({
+    markdown: reportWithTwoPairFragments()
+  }, {
+    discordWebhookUrl: webhookUrl,
+    fetch: fetcher
+  })
+
+  assert.equal(result.ok, false)
+  assert.equal(result.target, "discord")
+  assert.match(
+    result.ok ? "" : result.errorMessage,
+    /^Discord webhook request for pair `feature\/a` ↔ `main` fragment 2 failed:/
+  )
+  assert.match(
+    result.ok ? "" : result.errorMessage,
+    /\[REDACTED_DISCORD_WEBHOOK_URL\]/
+  )
+  assert.doesNotMatch(
+    result.ok ? "" : result.errorMessage,
+    /secret-token/
+  )
+  assert.equal(fetcher.requests.length, 3)
 })
 
 // Discord message length 제한을 넘는 report를 여러 메시지로 나눠 보내는지 확인
@@ -320,6 +380,41 @@ function fetchSpy(
   return spy
 }
 
+function fetchSequenceSpy(
+  results: Array<{
+    ok: boolean
+    status: number
+  } | Error>
+): FetchSpy {
+  const requests: FetchSpy["requests"] = []
+  const spy = (async (
+    input: string | URL | Request,
+    init?: RequestInit
+  ): Promise<Response> => {
+    requests.push({
+      url: String(input),
+      body: JSON.parse(String(init?.body)) as { content: string }
+    })
+    const result = results[requests.length - 1]
+
+    if (!result) {
+      throw new Error("Unexpected fetch request")
+    }
+
+    if (result instanceof Error) {
+      throw result
+    }
+
+    return {
+      ok: result.ok,
+      status: result.status
+    } as Response
+  }) as FetchSpy
+
+  spy.requests = requests
+  return spy
+}
+
 function failingFetch(message: string): typeof fetch {
   return (async (): Promise<Response> => {
     throw new Error(message)
@@ -351,4 +446,20 @@ class DeferredFetchSpy {
 
 function nextEventLoopTurn(): Promise<void> {
   return new Promise(resolve => setImmediate(resolve))
+}
+
+function reportWithTwoPairFragments(): string {
+  return [
+    "## Merge Risk Report",
+    "",
+    "### Summary",
+    "- watched branches: 1",
+    "",
+    "### Confirmed Conflicts",
+    "",
+    "#### `feature/a` ↔ `main`",
+    "- status: `confirmed_conflict`",
+    "- AI Analysis:",
+    "  - status: `predicted`"
+  ].join("\n")
 }

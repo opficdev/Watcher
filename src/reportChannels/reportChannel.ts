@@ -4,7 +4,10 @@ import {
   type ReportChannelOptions,
   type ReportChannelResult
 } from "./types.js"
-import { splitDiscordMessages } from "./discordMessageSplitter.js"
+import {
+  splitDiscordMessages,
+  type DiscordMessage
+} from "./discordMessageSplitter.js"
 
 // Discord webhook URL이 있으면 Discord channel로 보내고 없으면 stdout으로 fallback
 export async function send(
@@ -61,8 +64,8 @@ async function sendDiscord(
   const fetcher = options.fetch ?? fetch
   const messages = splitDiscordMessages(markdown)
 
-  try {
-    for (const message of messages) {
+  for (const message of messages) {
+    try {
       const response = await fetcher(webhookUrl, {
         method: "POST",
         headers: {
@@ -75,23 +78,34 @@ async function sendDiscord(
         return {
           ok: false,
           target: "discord",
-          errorMessage: `Discord webhook request failed with status ${response.status}`
+          errorMessage: `${failureLocationFor(message)} failed with status ${response.status}`
         }
       }
-    }
-
-    return {
-      ok: true,
-      target: "discord",
-      messageCount: messages.length
-    }
-  } catch (error) {
-    return {
-      ok: false,
-      target: "discord",
-      errorMessage: redactedErrorMessageFor(error, webhookUrl)
+    } catch (error) {
+      return {
+        ok: false,
+        target: "discord",
+        errorMessage: `${failureLocationFor(message)} failed: ${
+          redactedErrorMessageFor(error, webhookUrl)
+        }`
+      }
     }
   }
+
+  return {
+    ok: true,
+    target: "discord",
+    messageCount: messages.length
+  }
+}
+
+// 실패한 Discord request를 branch 조합 또는 report 조각 위치로 표시
+function failureLocationFor(message: DiscordMessage): string {
+  if (message.pairLabel) {
+    return `Discord webhook request for pair ${message.pairLabel} fragment ${message.fragmentNumber}`
+  }
+
+  return `Discord webhook request for report fragment ${message.fragmentNumber}`
 }
 
 // unknown error를 report 가능한 문자열로 변환
