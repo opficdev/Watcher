@@ -2,7 +2,7 @@ export const watcherRuntimeName = "Watcher"
 
 // Watcher 실행 구성의 설명 문자열을 반환
 export function watcherRuntimeDescription(): string {
-  return `${watcherRuntimeName} merge conflict probability automation`
+  return `${watcherRuntimeName} branch pair merge risk automation`
 }
 
 export { collectBranchContexts } from "./branches/branchCollector.js"

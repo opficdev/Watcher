@@ -8,16 +8,11 @@ on:
         required: true
         type: string
       base_branch:
-        description: "merge risk를 비교할 기준 branch"
+        description: "비교 조합에 포함할 기준 branch"
         required: true
         type: string
       default_branch:
         description: "감시 대상에서 제외할 default branch"
-        required: false
-        type: string
-        default: ""
-      critical_file_patterns:
-        description: "critical file wildcard pattern 목록. 줄바꿈으로 구분"
         required: false
         type: string
         default: ""
@@ -48,16 +43,11 @@ on:
         required: true
         type: string
       base_branch:
-        description: "merge risk를 비교할 기준 branch"
+        description: "비교 조합에 포함할 기준 branch"
         required: true
         type: string
       default_branch:
         description: "감시 대상에서 제외할 default branch"
-        required: false
-        type: string
-        default: ""
-      critical_file_patterns:
-        description: "critical file wildcard pattern 목록. 줄바꿈으로 구분"
         required: false
         type: string
         default: ""
@@ -163,7 +153,6 @@ jobs:
           WATCHER_DEBUG_ARTIFACT_DIR: ${{ inputs.upload_debug_artifact && format('{0}/watcher/debug', github.workspace) || '' }}
           WATCHER_BASE_BRANCH: ${{ inputs.base_branch }}
           WATCHER_DEFAULT_BRANCH: ${{ inputs.default_branch }}
-          WATCHER_CRITICAL_FILE_PATTERNS: ${{ inputs.critical_file_patterns }}
         run: npm run watch
 
       - name: Upload Watcher debug artifact

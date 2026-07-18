@@ -4,5 +4,5 @@ import { watcherRuntimeDescription, watcherRuntimeName } from "../src/index.js"
 
 test("exports Watcher runtime identity", () => {
   assert.equal(watcherRuntimeName, "Watcher")
-  assert.equal(watcherRuntimeDescription(), "Watcher merge conflict probability automation")
+  assert.equal(watcherRuntimeDescription(), "Watcher branch pair merge risk automation")
 })

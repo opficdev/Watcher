@@ -20,7 +20,6 @@ test("builds merge risk watch options from environment", () => {
     WATCHER_REPOSITORY_PATH: "/tmp/repository",
     WATCHER_BASE_BRANCH: "develop",
     WATCHER_DEFAULT_BRANCH: "main",
-    WATCHER_CRITICAL_FILE_PATTERNS: "package-lock.json\n.github/**",
     WATCHER_GITHUB_API_URL: "https://api.github.test",
     WATCHER_DEBUG_ARTIFACT_DIR: "/tmp/watcher-debug",
     WATCHER_WORKFLOW_REF: "opficdev/Watcher/.github/workflows/merge-risk-watch.yml@develop",
@@ -32,10 +31,6 @@ test("builds merge risk watch options from environment", () => {
     repositoryPath: "/tmp/repository",
     baseBranch: "develop",
     defaultBranch: "main",
-    criticalFilePatterns: [
-      "package-lock.json",
-      ".github/**"
-    ],
     remoteName: "origin",
     githubApiUrl: "https://api.github.test",
     githubToken: "github-token",
@@ -51,7 +46,6 @@ test("omits empty optional environment values", () => {
     WATCHER_REPOSITORY_PATH: "/tmp/repository",
     WATCHER_BASE_BRANCH: "develop",
     WATCHER_DEFAULT_BRANCH: "   ",
-    WATCHER_CRITICAL_FILE_PATTERNS: "\n  \n",
     GITHUB_TOKEN: "   "
   })
 
@@ -60,7 +54,6 @@ test("omits empty optional environment values", () => {
     repositoryPath: "/tmp/repository",
     baseBranch: "develop",
     defaultBranch: undefined,
-    criticalFilePatterns: [],
     remoteName: "origin",
     githubApiUrl: "https://api.github.com",
     githubToken: undefined
@@ -549,7 +542,6 @@ function baseOptions() {
     repository: "opficdev/Watcher",
     repositoryPath: "/tmp/repository",
     baseBranch: "develop",
-    criticalFilePatterns: [],
     remoteName: "origin",
     githubApiUrl: "https://api.github.test",
     githubToken: "github-token"

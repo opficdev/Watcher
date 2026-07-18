@@ -38,7 +38,7 @@ Do not skip the task packet. The task packet is the contract between models.
 Stop and ask the user before editing when:
 
 - The task packet conflicts with `AGENTS.md`.
-- The requested fix requires changing deterministic scores, statuses, signal precedence, AI authority, data exposure, secret handling, public workflow inputs, release packaging, or public exports without an explicit contract.
+- The requested fix requires changing deterministic pair statuses, reason precedence, AI authority, data exposure, secret handling, public workflow inputs, release packaging, or public exports without an explicit contract.
 - A role needs to call live GitHub, OpenAI, Discord, workflow dispatch, tag, release, PR, issue, or comment operations without current-turn authorization.
 - A required `Lightweight` or `Fast` custom agent cannot be loaded or selected through the connected side-task surface with its exact `task_name`, its pinned model is unavailable, or current tool policy requires user permission that has not been granted.
 - The current issue or PR scope is unclear after live GitHub inspection.
@@ -53,7 +53,7 @@ Do not apply the custom-agent stop condition only because external `codex exec`,
 | User request | Workflow |
 | --- | --- |
 | "이슈 구현", issue number, feature, bug fix | Issue-driven implementation |
-| Deterministic score, AI, external service, reusable workflow, release, public export, architecture docs | Architecture-sensitive implementation |
+| Deterministic pair graph, AI, external service, reusable workflow, release, public export, architecture docs | Architecture-sensitive implementation |
 | PR review comment, unresolved thread, requested changes | Review-thread follow-up |
 | Failing GitHub Actions, CI log, reusable workflow, release failure | CI failure triage |
 | PR body, release note, README, issue wording | Documentation-only writing |
@@ -141,8 +141,8 @@ Implementer must not proceed on `Block` or `Needs Owner Decision`.
 
 - Relevant source imports and module ownership.
 - Existing source and tests for the changed contract.
-- Deterministic score, status, reason, precedence, and same-input behavior.
-- AI target selection, evidence shape, prompt, response validation, failure isolation, and batching.
+- Deterministic pair status, reason, precedence, and same-input behavior.
+- AI target selection, evidence shape, prompt, response validation, pair failure isolation, and request ordering.
 - GitHub, OpenAI, Discord, environment-variable, child-process, filesystem, and debug-artifact data flow.
 - `package.json`, `tsconfig.json`, `src/index.ts`, `README.md`, and relevant `.github/workflows/*` when affected.
 - Reusable workflow inputs, secrets, permissions, source resolution, and release asset compatibility.
@@ -256,7 +256,7 @@ Use for PR body, issue text, release note, README wording, review reply draft, c
 - When the Documentation Writer role is required, the main agent must dispatch the draft through `documentation_writer` before writing the final response.
 - If dispatch requires explicit user permission and it has not been granted, ask before drafting, returning, or posting the Documentation Writer output.
 - `Primary` must review the output against `.github/pull_request_template.md`, issue scope, implementation, tests, workflows, and actual diff.
-- Keep deterministic possibility separate from AI prediction and do not claim live-service verification that was not run.
+- Keep deterministic pair results separate from AI prediction and do not claim live-service verification that was not run.
 - If the user asks only for text, return text directly and do not create files.
 - If documentation files are changed, keep the change scoped to the requested document.
 
@@ -396,7 +396,7 @@ Include the selected workflow name in the task packet `Source` or `Goal` field s
 - Source: <PR URL or review thread URL>
 - Goal: Address accepted review feedback without expanding PR scope.
 - Scope: Apply only required review fixes confirmed by GitHub/CI Analyst and Planner.
-- Out of scope: Optional suggestions, unrelated cleanup, new score or architecture policy, live `npm run watch`, release actions.
+- Out of scope: Optional suggestions, unrelated cleanup, new pair classification or architecture policy, live `npm run watch`, release actions.
 - Expected changed files: <filled by Planner after reading threads>
 - Current owner: <module and contract identified by Planner>
 - Architecture risk: none / possible / confirmed

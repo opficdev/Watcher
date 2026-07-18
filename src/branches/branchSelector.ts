@@ -96,7 +96,7 @@ function exclusionReasonFor(
   options: BranchSelectionOptions,
   activeBranchCutoff: Date
 ): BranchExclusionReason | undefined {
-  // base, default branch는 비교 기준이므로 감시 대상에서 제외
+  // base branch는 조합에 별도 포함하고 default branch는 감시하지 않으므로 선택에서 제외
   if (branch.name === options.baseBranch) {
     return "base_branch"
   }

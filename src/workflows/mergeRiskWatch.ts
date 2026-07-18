@@ -45,7 +45,6 @@ type MergeRiskWatchOptions = {
   repositoryPath: string
   baseBranch: string
   defaultBranch?: string
-  criticalFilePatterns: string[]
   remoteName: string
   githubApiUrl: string
   githubToken?: string
@@ -100,7 +99,6 @@ export function optionsFromEnvironment(
     repositoryPath,
     baseBranch,
     defaultBranch,
-    criticalFilePatterns: patternsFrom(optionalEnv(env, "WATCHER_CRITICAL_FILE_PATTERNS")),
     remoteName: optionalEnv(env, "WATCHER_REMOTE_NAME") ?? "origin",
     githubApiUrl: optionalEnv(env, "WATCHER_GITHUB_API_URL") ?? "https://api.github.com",
     githubToken: optionalEnv(env, "GITHUB_TOKEN"),
@@ -124,7 +122,6 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
     repositoryPath: options.repositoryPath,
     baseBranch: options.baseBranch,
     defaultBranch: options.defaultBranch,
-    criticalFilePatterns: options.criticalFilePatterns,
     remoteName: options.remoteName,
     githubApiUrl: options.githubApiUrl,
     workflowRef: options.workflowRef,
@@ -487,14 +484,6 @@ function githubUrlFor(
   }
 
   return url.toString()
-}
-
-// 줄바꿈으로 전달된 critical file pattern 값을 정리
-function patternsFrom(value: string | undefined): string[] {
-  return value
-    ?.split(/\r?\n/)
-    .map(pattern => pattern.trim())
-    .filter(Boolean) ?? []
 }
 
 // stdout을 단일 문자열로 반환하는 git command helper

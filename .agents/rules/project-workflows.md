@@ -65,7 +65,7 @@ This reference holds Watcher-specific working rules that should live with the pr
 ## Consumer workflow contract
 
 - Treat `.github/workflows/merge-risk-watch.yml` and the corresponding README sections as one consumer-facing contract.
-- Keep `repository`, `base_branch`, `default_branch`, `critical_file_patterns`, `watcher_version`, and `upload_debug_artifact` aligned across workflow and documentation.
+- Keep `repository`, `base_branch`, `default_branch`, `watcher_version`, and `upload_debug_artifact` aligned across workflow and documentation.
 - Keep `watcher_github_token`, `openai_api_key`, and optional `discord_webhook_url` aligned with runtime environment mapping.
 - Preserve release-tag asset download and branch/SHA source-build fallback behavior unless the change explicitly revises it.
 - Update consumer examples only when their public contract changes.
@@ -80,6 +80,6 @@ This reference holds Watcher-specific working rules that should live with the pr
 
 ## Documentation alignment
 
-- Update README behavior descriptions when public inputs, secrets, environment variables, score policy, AI behavior, debug artifacts, report behavior, or release behavior changes.
+- Update README behavior descriptions when public inputs, secrets, environment variables, pair graph policy, AI behavior, debug artifacts, report behavior, or release behavior changes.
 - Do not update README for an internal refactor that leaves the documented contract unchanged.
 - Keep AI workflow documents under `.agents/` and custom agent configurations under `.codex/agents/`.

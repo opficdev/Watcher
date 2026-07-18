@@ -37,15 +37,15 @@ Default role-to-model and execution assignment:
 | --- | --- | --- | --- |
 | Planner | active main agent | `Primary` | Always for live issues, PR scope, architecture scope, or implementation planning |
 | Implementer | active main agent | `Primary` | Always for TypeScript production code, tests, module boundaries, public exports, provider behavior, workflows, releases, or GitHub writes |
-| Architecture Watcher | `architecture_watcher` | `Lightweight` for preflight, `Primary` for final boundary verdict | Any finding is `Block` or `Needs Owner Decision`, or the change touches deterministic scoring, AI authority, external-service data, reusable workflow contracts, secrets, or release packaging |
+| Architecture Watcher | `architecture_watcher` | `Lightweight` for preflight, `Primary` for final boundary verdict | Any finding is `Block` or `Needs Owner Decision`, or the change touches deterministic pair classification, AI authority, external-service data, reusable workflow contracts, secrets, or release packaging |
 | Code Reviewer | `code_reviewer` | `Lightweight` for first pass, `Primary` for final blocking review | Findings involve runtime behavior, data loss, secret exposure, provider failure isolation, workflow behavior, or test strategy |
 | Verification Runner | `verification_runner` | `Lightweight` | Verification fails, the failure cause is unclear, or a source or workflow fix is needed |
 | GitHub/CI Analyst | `github_ci_analyst` | `Lightweight` | CI root cause requires code or workflow changes, release state is ambiguous, or review comments conflict |
-| Documentation Writer | `documentation_writer` | `Lightweight` | Text must explain score policy, AI behavior, security boundaries, reusable workflow contracts, release risk, CI root cause, or PR scope tradeoffs |
+| Documentation Writer | `documentation_writer` | `Lightweight` | Text must explain pair graph policy, AI behavior, security boundaries, reusable workflow contracts, release risk, CI root cause, or PR scope tradeoffs |
 
 Project-scoped custom agents live in `.codex/agents/`. Their TOML files pin the concrete model and sandbox for spawned sessions; this table is the canonical role-to-agent routing map.
 
-Do not assign `Lightweight` as the only model for production TypeScript implementation, deterministic score or status changes, provider contracts, reusable workflow inputs or secrets, release packaging, public exports, commits, pushes, PR creation, or final integration.
+Do not assign `Lightweight` as the only model for production TypeScript implementation, deterministic pair status or reason changes, provider contracts, reusable workflow inputs or secrets, release packaging, public exports, commits, pushes, PR creation, or final integration.
 
 ### Model dispatch requirements
 
@@ -141,7 +141,7 @@ Planner must produce this packet before handing work to another role.
 - Stop conditions:
 ```
 
-Use `Architecture risk: possible` when the task touches module ownership, deterministic scoring, AI authority or data shape, external-service boundaries, secret redaction, public exports, reusable workflow contracts, release packaging, or architecture documentation.
+Use `Architecture risk: possible` when the task touches module ownership, deterministic pair classification, AI authority or data shape, external-service boundaries, secret redaction, public exports, reusable workflow contracts, release packaging, or architecture documentation.
 
 ## Role activation
 
@@ -193,7 +193,7 @@ May:
 - Trace the owning source module, test file, workflow, and public documentation for the requested behavior.
 - Separate deterministic policy, AI assistance, report formatting, report delivery, debug output, and runtime orchestration scope.
 - Decide which roles are required and which checks can run without live services.
-- Ask the user when score policy, data exposure, public workflow contracts, release behavior, or ownership is ambiguous.
+- Ask the user when pair graph policy, data exposure, public workflow contracts, release behavior, or ownership is ambiguous.
 
 Must not:
 
@@ -272,7 +272,7 @@ Must inspect:
 
 - Current and proposed owning module for each changed behavior.
 - Imports and dependency direction among `branches`, `git`, `risks`, `ai`, `reports`, `reportChannels`, `debug`, and `workflows`.
-- Whether normalized input still produces the same deterministic score, status, reason, and report result when behavior is not in scope.
+- Whether normalized input still produces the same deterministic pair status, reason, and report result when behavior is not in scope.
 - Whether AI target selection and provider results remain additive and validated.
 - Whether provider failures remain isolated without removing deterministic results.
 - Data sent to GitHub, OpenAI, Discord, logs, and debug artifacts, including secret and raw-source exposure.
@@ -283,7 +283,7 @@ Must inspect:
 Must not:
 
 - Edit files.
-- Approve ambiguous score, security, workflow, public API, or release decisions by assumption.
+- Approve ambiguous pair graph, security, workflow, public API, or release decisions by assumption.
 - Treat a passing build as proof that deterministic or consumer-facing contracts are unchanged.
 - Hide architecture decisions inside refactor, test, build-fix, or documentation wording.
 
@@ -313,14 +313,14 @@ Code Reviewer is a read-only diff reviewer.
 May:
 
 - Inspect `git diff`, changed source, tests, package scripts, workflows, README, and related contracts.
-- Recompute representative deterministic cases from the tests and verify score caps, precedence, overlap suppression, skip/fail mapping, and report output.
+- Recompute representative deterministic cases from the tests and verify pair status precedence, overlap reasons, skip/fail mapping, and report output.
 - Check strict typing, async failure behavior, environment fallbacks, path handling, provider response validation, Discord chunking, and secret redaction.
 - Verify whether the change matches the task packet and current issue or PR body.
 
 Must prioritize:
 
-- Incorrect branch selection, Git signal interpretation, score or status changes, and report regressions.
-- Provider calls for the wrong targets, unvalidated output, lost deterministic results, or batch result misalignment.
+- Incorrect branch selection, Git signal interpretation, pair status or reason changes, and report regressions.
+- Provider calls for the wrong targets, unvalidated output, lost deterministic results, or pair result ordering errors.
 - Secret exposure, raw data expansion, unsafe error messages, or debug artifact regressions.
 - Reusable workflow, CI, release, or consumer contract drift.
 - Missing success, failure, boundary, and fallback tests.
@@ -437,7 +437,7 @@ Must:
 
 - Write PR and review content in Korean and end sentences in noun form.
 - Keep implementation names, paths, commands, environment variables, workflow names, branch names, issue numbers, and commit hashes unchanged.
-- Explain deterministic possibility separately from AI prediction.
+- Explain deterministic pair results separately from AI prediction.
 - Keep reusable workflow inputs, secrets, permissions, source resolution, debug artifact behavior, report fallback, and release contents aligned with implementation.
 - Mention only verification commands that were actually run.
 
@@ -469,7 +469,7 @@ Before reporting completion:
 - Confirm workflow changes were checked against inputs, secrets, permissions, source resolution, and README contracts.
 - Confirm docs-only changes received diff, file-presence, Markdown, and TOML checks without claiming TypeScript or live-service verification.
 - Confirm `git status --short` contains no generated or unrelated files added by the task.
-- Report unresolved owner decisions instead of silently changing score, security, workflow, public API, or release policy.
+- Report unresolved owner decisions instead of silently changing pair graph, security, workflow, public API, or release policy.
 
 ## Example workflows
 
