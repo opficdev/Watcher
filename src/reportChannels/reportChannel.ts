@@ -41,33 +41,52 @@ export async function deliver(
     }
   }
 
+  const errorMessages: string[] = []
   const summaryPath = options.githubStepSummaryPath ??
     process.env[GITHUB_STEP_SUMMARY_ENV_NAME]
-  const outputResult = summaryPath?.trim()
-    ? await sendGitHubActionsSummary(input.markdown, summaryPath, options)
-    : await sendStdout(input.markdown, options)
 
-  if (!outputResult.ok) {
-    return {
-      ok: false,
-      errorMessage: outputResult.errorMessage
+  if (summaryPath?.trim()) {
+    const summaryResult = await sendGitHubActionsSummary(
+      input.markdown,
+      summaryPath,
+      options
+    )
+
+    if (!summaryResult.ok) {
+      errorMessages.push(summaryResult.errorMessage)
+
+      const stdoutResult = await sendStdout(input.markdown, options)
+
+      if (!stdoutResult.ok) {
+        errorMessages.push(
+          `stdout report write failed: ${stdoutResult.errorMessage}`
+        )
+      }
+    }
+  } else {
+    const stdoutResult = await sendStdout(input.markdown, options)
+
+    if (!stdoutResult.ok) {
+      errorMessages.push(
+        `stdout report write failed: ${stdoutResult.errorMessage}`
+      )
     }
   }
 
   const webhookUrl = options.discordWebhookUrl ?? process.env[DISCORD_WEBHOOK_URL_ENV_NAME]
 
-  if (!webhookUrl) {
-    return {
-      ok: true
+  if (webhookUrl) {
+    const discordResult = await sendDiscord(input.markdown, webhookUrl, options)
+
+    if (!discordResult.ok) {
+      errorMessages.push(discordResult.errorMessage)
     }
   }
 
-  const discordResult = await sendDiscord(input.markdown, webhookUrl, options)
-
-  if (!discordResult.ok) {
+  if (0 < errorMessages.length) {
     return {
       ok: false,
-      errorMessage: discordResult.errorMessage
+      errorMessage: errorMessages.join("\n")
     }
   }
 

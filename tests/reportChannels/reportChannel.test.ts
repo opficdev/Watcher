@@ -97,6 +97,108 @@ test("skips every workflow report delivery for empty report", async () => {
   assert.equal(stdout.output, "")
 })
 
+// Actions summary 기록이 실패해도 stdout fallback과 Discord 전송을 계속하는지 확인
+test("continues stdout and Discord delivery after summary failure", async () => {
+  const fetcher = fetchSpy({})
+  const stdout = new StdoutSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: "## Merge Risk Report"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "/tmp/github-step-summary",
+    appendFile: async () => {
+      throw new Error("summary unavailable")
+    },
+    fetch: fetcher,
+    stdout
+  })
+
+  assert.deepEqual(result, {
+    ok: false,
+    errorMessage: "GitHub Actions summary write failed: summary unavailable"
+  })
+  assert.equal(stdout.output, "## Merge Risk Report\n")
+  assert.equal(fetcher.requests.length, 1)
+})
+
+// Discord 전송이 실패해도 Actions summary에 전체 report가 남는지 확인
+test("keeps Actions summary when Discord delivery fails", async () => {
+  const appendFile = new AppendFileSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: "## Merge Risk Report"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "/tmp/github-step-summary",
+    appendFile: appendFile.write,
+    fetch: fetchSpy({}, {
+      ok: false,
+      status: 500
+    })
+  })
+
+  assert.deepEqual(result, {
+    ok: false,
+    errorMessage: "Discord webhook request for report fragment 1 failed with status 500"
+  })
+  assert.deepEqual(appendFile.writes, [{
+    path: "/tmp/github-step-summary",
+    content: "## Merge Risk Report\n"
+  }])
+})
+
+// Actions summary와 Discord가 모두 실패하면 두 channel 오류를 순서대로 반환하는지 확인
+test("reports summary and Discord delivery failures together", async () => {
+  const fetcher = fetchSpy({}, {
+    ok: false,
+    status: 500
+  })
+  const stdout = new StdoutSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: "## Merge Risk Report"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "/tmp/github-step-summary",
+    appendFile: async () => {
+      throw new Error("summary unavailable")
+    },
+    fetch: fetcher,
+    stdout
+  })
+
+  assert.deepEqual(result, {
+    ok: false,
+    errorMessage: [
+      "GitHub Actions summary write failed: summary unavailable",
+      "Discord webhook request for report fragment 1 failed with status 500"
+    ].join("\n")
+  })
+  assert.equal(stdout.output, "## Merge Risk Report\n")
+  assert.equal(fetcher.requests.length, 1)
+})
+
+// local stdout 실패가 설정된 Discord 전송을 막지 않는지 확인
+test("continues Discord delivery after stdout failure", async () => {
+  const fetcher = fetchSpy({})
+  const result = await deliverMergeRiskReport({
+    markdown: "## Merge Risk Report"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "",
+    fetch: fetcher,
+    stdout: {
+      write: () => {
+        throw new Error("stdout unavailable")
+      }
+    }
+  })
+
+  assert.deepEqual(result, {
+    ok: false,
+    errorMessage: "stdout report write failed: stdout unavailable"
+  })
+  assert.equal(fetcher.requests.length, 1)
+})
+
 // Discord webhook URL이 없으면 Markdown report를 stdout으로 출력하는지 확인
 test("sends report to stdout when discord webhook is missing", async () => {
   const stdout = new StdoutSpy()
