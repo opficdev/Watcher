@@ -520,6 +520,164 @@ test("shares the Discord retry wait budget across fragments", async () => {
   assert.notDeepEqual(fetcher.requests[1]?.body, fetcher.requests[2]?.body)
 })
 
+// 성공 응답에서 bucket 소진을 확인하면 다음 fragment 전에 reset delay를 기다리는지 확인
+test("waits for the Discord bucket reset before the next fragment", async () => {
+  const fetcher = fetchSpy({}, {
+    outcomes: [
+      {
+        ok: true,
+        status: 204,
+        headers: {
+          "X-RateLimit-Remaining": "0",
+          "X-RateLimit-Reset-After": "0.25"
+        }
+      },
+      { ok: true, status: 204 }
+    ]
+  })
+  const wait = new DiscordWaitSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: "a".repeat(2001)
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "",
+    fetch: fetcher,
+    stdout: new StdoutSpy(),
+    wait: wait.wait
+  })
+
+  assert.deepEqual(result, { ok: true })
+  assert.deepEqual(wait.milliseconds, [250])
+  assert.equal(fetcher.requests.length, 2)
+  assert.notDeepEqual(fetcher.requests[0]?.body, fetcher.requests[1]?.body)
+})
+
+// bucket이 소진됐지만 reset delay가 없으면 다음 fragment를 보내지 않는지 확인
+test("stops before the next fragment when the bucket reset delay is missing", async () => {
+  const fetcher = fetchSpy({}, {
+    outcomes: [{
+      ok: true,
+      status: 204,
+      headers: { "X-RateLimit-Remaining": "0" }
+    }]
+  })
+  const wait = new DiscordWaitSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: "a".repeat(2001)
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "",
+    fetch: fetcher,
+    stdout: new StdoutSpy(),
+    wait: wait.wait
+  })
+
+  assert.deepEqual(result, {
+    ok: false,
+    errorMessage: "Discord webhook request for report fragment 2 was not sent: Discord rate limit reset delay unavailable"
+  })
+  assert.deepEqual(wait.milliseconds, [])
+  assert.equal(fetcher.requests.length, 1)
+})
+
+// bucket reset delay가 유효하지 않으면 다음 fragment를 보내지 않는지 확인
+test("stops before the next fragment when the bucket reset delay is invalid", async () => {
+  const fetcher = fetchSpy({}, {
+    outcomes: [{
+      ok: true,
+      status: 204,
+      headers: {
+        "X-RateLimit-Remaining": "0",
+        "X-RateLimit-Reset-After": "-1"
+      }
+    }]
+  })
+  const wait = new DiscordWaitSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: "a".repeat(2001)
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "",
+    fetch: fetcher,
+    stdout: new StdoutSpy(),
+    wait: wait.wait
+  })
+
+  assert.deepEqual(result, {
+    ok: false,
+    errorMessage: "Discord webhook request for report fragment 2 was not sent: Discord rate limit reset delay unavailable"
+  })
+  assert.deepEqual(wait.milliseconds, [])
+  assert.equal(fetcher.requests.length, 1)
+})
+
+// 마지막 fragment 뒤에는 bucket이 소진돼도 불필요하게 기다리지 않는지 확인
+test("does not wait for the Discord bucket reset after the last fragment", async () => {
+  const fetcher = fetchSpy({}, {
+    outcomes: [{
+      ok: true,
+      status: 204,
+      headers: {
+        "X-RateLimit-Remaining": "0",
+        "X-RateLimit-Reset-After": "60"
+      }
+    }]
+  })
+  const wait = new DiscordWaitSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: "## Merge Risk Report"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "",
+    fetch: fetcher,
+    stdout: new StdoutSpy(),
+    wait: wait.wait
+  })
+
+  assert.deepEqual(result, { ok: true })
+  assert.deepEqual(wait.milliseconds, [])
+  assert.equal(fetcher.requests.length, 1)
+})
+
+// 429 retry와 성공 응답의 bucket reset이 같은 60초 예산을 소비하는지 확인
+test("shares the Discord wait budget between retries and bucket resets", async () => {
+  const fetcher = fetchSpy({}, {
+    outcomes: [
+      {
+        ok: false,
+        status: 429,
+        headers: { "Retry-After": "30" }
+      },
+      {
+        ok: true,
+        status: 204,
+        headers: {
+          "X-RateLimit-Remaining": "0",
+          "X-RateLimit-Reset-After": "31"
+        }
+      }
+    ]
+  })
+  const wait = new DiscordWaitSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: "a".repeat(2001)
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "",
+    fetch: fetcher,
+    stdout: new StdoutSpy(),
+    wait: wait.wait
+  })
+
+  assert.deepEqual(result, {
+    ok: false,
+    errorMessage: "Discord webhook request for report fragment 2 was not sent: Discord wait budget of 60 seconds exhausted"
+  })
+  assert.deepEqual(wait.milliseconds, [30000])
+  assert.equal(fetcher.requests.length, 2)
+  assert.deepEqual(fetcher.requests[0]?.body, fetcher.requests[1]?.body)
+})
+
 // 429 응답에 유효한 delay가 없으면 임의의 간격으로 재시도하지 않는지 확인
 test("returns failure when Discord omits the retry delay", async () => {
   const fetcher = fetchSpy({}, {
@@ -950,7 +1108,8 @@ class DeferredFetchSpy {
   resolveNext(): void {
     this.resolvers.shift()?.({
       ok: true,
-      status: 204
+      status: 204,
+      headers: new Headers()
     } as Response)
   }
 }

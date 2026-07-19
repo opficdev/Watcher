@@ -189,7 +189,7 @@ async function sendDiscord(
     remainingMilliseconds: DISCORD_WAIT_BUDGET_MILLISECONDS
   }
 
-  for (const message of messages) {
+  for (const [index, message] of messages.entries()) {
     let retryCount = 0
 
     while (true) {
@@ -203,6 +203,38 @@ async function sendDiscord(
         })
 
         if (response.ok) {
+          const nextMessage = messages[index + 1]
+
+          if (nextMessage) {
+            const remaining = response.headers.get("X-RateLimit-Remaining")
+
+            if (remaining?.trim() && Number(remaining) === 0) {
+              const milliseconds = millisecondsForSeconds(
+                response.headers.get("X-RateLimit-Reset-After")
+              )
+
+              if (milliseconds === undefined) {
+                return discordUnsentFailureFor(
+                  nextMessage,
+                  "Discord rate limit reset delay unavailable"
+                )
+              }
+
+              const hasWaitBudget = await consumeDiscordWaitBudget(
+                milliseconds,
+                waitBudget,
+                wait
+              )
+
+              if (!hasWaitBudget) {
+                return discordUnsentFailureFor(
+                  nextMessage,
+                  "Discord wait budget of 60 seconds exhausted"
+                )
+              }
+            }
+          }
+
           break
         }
 
@@ -343,6 +375,18 @@ function discordStatusFailureFor(
     ok: false,
     target: "discord",
     errorMessage: `${failureLocationFor(message)} failed with status ${status}`
+  }
+}
+
+// 아직 요청하지 않은 다음 Discord fragment의 전송 중단 사유를 반환
+function discordUnsentFailureFor(
+  message: DiscordMessage,
+  reason: string
+): ReportChannelResult {
+  return {
+    ok: false,
+    target: "discord",
+    errorMessage: `${failureLocationFor(message)} was not sent: ${reason}`
   }
 }
 
