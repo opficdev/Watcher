@@ -31,6 +31,36 @@ test("writes full report to GitHub Actions summary", async () => {
   assert.equal(stdout.output, "")
 })
 
+// 주입 경로가 없어도 Actions 환경 변수의 summary 경로를 사용하는지 확인
+test("reads GitHub Actions summary path from environment", async () => {
+  const appendFile = new AppendFileSpy()
+  const originalSummaryPath = process.env.GITHUB_STEP_SUMMARY
+  process.env.GITHUB_STEP_SUMMARY = "/tmp/github-step-summary-from-env"
+
+  try {
+    const result = await deliverMergeRiskReport({
+      markdown: "## Merge Risk Report"
+    }, {
+      discordWebhookUrl: "",
+      appendFile: appendFile.write
+    })
+
+    assert.deepEqual(result, {
+      ok: true
+    })
+    assert.deepEqual(appendFile.writes, [{
+      path: "/tmp/github-step-summary-from-env",
+      content: "## Merge Risk Report\n"
+    }])
+  } finally {
+    if (originalSummaryPath === undefined) {
+      delete process.env.GITHUB_STEP_SUMMARY
+    } else {
+      process.env.GITHUB_STEP_SUMMARY = originalSummaryPath
+    }
+  }
+})
+
 // Discord 설정이 있어도 Actions summary와 Discord에 report를 모두 전달하는지 확인
 test("writes Actions summary and sends Discord report", async () => {
   const appendFile = new AppendFileSpy()
@@ -173,6 +203,39 @@ test("reports summary and Discord delivery failures together", async () => {
     ].join("\n")
   })
   assert.equal(stdout.output, "## Merge Risk Report\n")
+  assert.equal(fetcher.requests.length, 1)
+})
+
+// summary, stdout fallback, Discord가 모두 실패하면 오류를 전달 순서대로 반환하는지 확인
+test("reports summary stdout and Discord failures in order", async () => {
+  const fetcher = fetchSpy({}, {
+    ok: false,
+    status: 500
+  })
+  const result = await deliverMergeRiskReport({
+    markdown: "## Merge Risk Report"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "/tmp/github-step-summary",
+    appendFile: async () => {
+      throw new Error("summary unavailable")
+    },
+    fetch: fetcher,
+    stdout: {
+      write: () => {
+        throw new Error("stdout unavailable")
+      }
+    }
+  })
+
+  assert.deepEqual(result, {
+    ok: false,
+    errorMessage: [
+      "GitHub Actions summary write failed: summary unavailable",
+      "stdout report write failed: stdout unavailable",
+      "Discord webhook request for report fragment 1 failed with status 500"
+    ].join("\n")
+  })
   assert.equal(fetcher.requests.length, 1)
 })
 
