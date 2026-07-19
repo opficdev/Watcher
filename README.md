@@ -20,7 +20,7 @@ consumer repository의 `Settings` > `Secrets and variables` > `Actions` > `Repos
 | --- | --- | --- |
 | `WATCHER_GITHUB_TOKEN` | 필수 | watched repository checkout, branch fetch, PR/check metadata 조회에 사용할 fine-grained PAT |
 | `OPENAI_API_KEY` | 필수 | OpenAI prediction 생성 |
-| `DISCORD_WEBHOOK_URL` | 선택 | Discord webhook report 전송. 미설정 시 stdout으로 출력 |
+| `DISCORD_WEBHOOK_URL` | 선택 | Discord webhook report 추가 전송. 미설정 시 Actions summary 또는 stdout만 사용 |
 
 `WATCHER_GITHUB_TOKEN`은 fine-grained personal access token을 권장합니다. public repository라도 checkout, branch fetch, check metadata, pull request metadata 조회를 같은 방식으로 처리하기 위해 explicit token을 사용합니다.
 
@@ -61,7 +61,7 @@ reusable workflow는 다음 input을 받습니다.
 
 Watcher는 `base_branch`와 `default_branch`를 active branch 선택 대상에서 제외합니다. `base_branch`는 선택된 active branch와 함께 비교 집합에 별도로 포함하고, 이 집합에서 중복 없는 모든 branch 조합을 이름순으로 구성합니다. branch 이름에 맞춰야 하는 prefix나 regex는 요구하지 않습니다.
 
-최근 14일 안에 갱신된 branch를 최근 갱신 순으로 최대 30개까지 선택합니다. 기간을 벗어난 branch와 개수 제한을 넘은 branch는 report의 `Excluded Branches`에 제외 사유와 함께 표시합니다.
+Watcher는 remote tracking branch의 최신 commit `committer date`가 최근 14일 이내인 branch를 갱신 시각 내림차순, 동률이면 이름순으로 최대 30개 선택합니다. 기간·개수 초과 branch는 `Excluded Branches`에 `stale_branch`, `branch_limit`으로 표시합니다. 14일·30개는 고정 정책이며 조정용 workflow input은 추가하지 않습니다.
 
 Watcher는 merge된 branch를 직접 삭제하지 않습니다. consumer repository의 `Settings` > `General` > `Pull Requests`에서 `Automatically delete head branches` 옵션을 켜야 합니다. 이 옵션을 켜면 merge된 branch가 자동으로 삭제되어 이미 merge된 branch를 계속 감시하는 상황을 줄일 수 있습니다.
 
@@ -84,7 +84,9 @@ branch나 SHA ref로 reusable workflow를 호출하면 개발용 fallback으로 
 
 ## Branch 조합 분석
 
-Watcher는 `base_branch`와 선택된 active branch 전체에서 중복 없는 모든 조합을 만들고, 각 조합에 virtual merge와 변경 문맥 수집을 수행합니다. 같은 입력은 항상 같은 조합 순서, 상태, reason을 만들어야 합니다.
+Watcher는 `base_branch`와 선택된 active branch 전체에서 중복 없는 모든 조합을 만들고, 각 조합에 virtual merge와 변경 문맥 수집을 수행합니다. 같은 입력은 항상 같은 조합 순서, 상태, reason을 만들어야 합니다. active branch가 상한인 30개이면 `base_branch`를 포함한 31개 branch에서 `31 × 30 ÷ 2 = 465`개 조합을 비교합니다.
+
+분석 전 `git fetch --prune`으로 local remote tracking ref를 갱신한 뒤, 고정된 commit OID를 `git merge-tree --stdin --name-only --messages`에 전달해 가상 병합 결과를 읽습니다. 이 검사는 현재 branch를 전환하거나 worktree 파일을 수정하지 않으며 merge commit 생성, remote push, PR 수정도 수행하지 않습니다.
 
 | status | reason | 의미 |
 | --- | --- | --- |
@@ -95,15 +97,17 @@ Watcher는 `base_branch`와 선택된 active branch 전체에서 중복 없는 �
 | `potential_overlap` | `same_file_overlap` | clean merge 조합이 같은 파일을 수정함 |
 | `clean` | `clean_merge` | conflict와 변경 겹침이 확인되지 않음 |
 
-`confirmed_conflict`는 virtual merge 결과를 우선합니다. merge 또는 변경 문맥 수집에 실패하면 해당 조합만 `error`로 격리합니다. clean merge에서는 hunk와 파일 겹침을 reason으로 기록하고, 겹침이 없으면 `clean`으로 분류합니다.
+`confirmed_conflict`는 code context 결과보다 우선합니다. merge 검사 실패와 clean merge의 변경 문맥 수집 실패는 해당 조합만 `error`로 격리합니다.
 
 Report의 `Summary`에는 active period, base branch, 발견·감시 branch 수, 비교·clean 조합 수를 표시합니다. 상세 결과는 `Confirmed Conflicts`, `Potential Risks`, `Branch Impact`, `Excluded Branches`, `Merge Errors`로 나눕니다. 확정 conflict와 잠재 위험 항목에는 branch 조합, 상태, commit OID, reason, 관련 파일, conflict type, AI 결과를 표시합니다.
 
 ## AI-assisted prediction
 
-AI prediction은 branch 조합의 결정론적 상태와 reason을 대체하지 않습니다. Watcher는 선택된 조합의 제한된 evidence를 OpenAI API에 전달하고 AI 분석과 해결 방안을 추가합니다.
+AI prediction은 결정론적 status와 reason을 대체하지 않고 분석과 해결 방안을 report 제안으로만 추가합니다. 검증된 응답과 `Suggested Patch`도 worktree에 적용하지 않으며 commit, push, PR 수정, conflict 자동 해결을 수행하지 않습니다.
 
 기본 AI provider는 OpenAI Responses API입니다. consumer repository에는 `OPENAI_API_KEY` secret을 설정해야 합니다.
+
+OpenAI API에는 대상 조합의 branch 이름·commit OID·status·reason·conflict 정보와 관련 파일의 merge base, left branch, right branch, virtual merge 결과 코드 원문을 JSON으로 전달합니다. 32 KiB 이하이면서 400줄 이하인 파일은 전체 내용을 사용할 수 있고, 그 밖의 파일은 대상 hunk의 함수 범위 또는 전후 40줄을 version별 최대 400줄까지 수집합니다. 네 version 코드 원문은 조합당 최대 128 KiB이며, 초과 hunk를 제외하고 포함·제외 file 및 hunk 수를 함께 전달합니다.
 
 AI prediction 대상은 모든 `confirmed_conflict` 조합과 `same_hunk_overlap` reason이 있는 `potential_overlap` 조합입니다. `same_file_overlap`만 있는 `potential_overlap` 조합은 호출 대상에서 제외하고 `skipped` 상태로 표시합니다. `clean`은 Summary의 개수로만 집계하고 `error`는 `Merge Errors`에 표시하며 AI 상태를 붙이지 않습니다. 대상 조합이 없으면 AI client를 만들거나 provider를 호출하지 않습니다.
 
@@ -148,11 +152,45 @@ artifact에는 다음 파일이 포함됩니다.
 
 ## Report channel
 
-Merge risk report는 Markdown으로 생성됩니다. consumer repository에 `DISCORD_WEBHOOK_URL` secret이 있으면 Discord webhook으로 전송하고, 없으면 stdout으로 출력합니다.
+Merge risk report는 Markdown으로 생성되어 GitHub Actions의 `GITHUB_STEP_SUMMARY`에 기록되고, 경로가 없거나 기록에 실패하면 stdout으로 출력됩니다. `DISCORD_WEBHOOK_URL`이 있으면 같은 report를 Discord에도 전송합니다.
 
 현재 webhook report channel은 Discord incoming webhook 전용입니다. Slack incoming webhook은 payload 형식이 달라 `DISCORD_WEBHOOK_URL`에 Slack URL을 넣어도 동작하지 않습니다.
 
-Discord webhook으로 전송할 때는 Discord message length 제한에 맞춰 긴 report를 여러 메시지로 나눕니다. 전송 실패가 발생해도 webhook URL secret이 error message에 그대로 노출되지 않도록 처리합니다.
+Discord 전송은 report를 2,000자 이하 메시지로 나누되 `Summary`, section, branch 조합, AI 분석, 해결 순서, `Suggested Patch` 경계와 code fence, 조각 번호를 보존합니다. 전송 오류에는 webhook URL을 노출하지 않습니다.
+
+### Report 예시
+
+```markdown
+## Merge Risk Report
+
+### Summary
+- active period: `2026-07-03T00:00:00.000Z` - `2026-07-17T00:00:00.000Z` (`14 days`)
+- base branch: `develop`
+- discovered branches: 1
+- watched branches: 0
+- compared pairs: 0
+- clean pairs: 0
+
+### Confirmed Conflicts
+
+없음
+
+### Potential Risks
+
+없음
+
+### Branch Impact
+
+없음
+
+### Excluded Branches
+
+없음
+
+### Merge Errors
+
+없음
+```
 
 ## Local development
 
@@ -211,11 +249,9 @@ npm test
 | `OPENAI_API_KEY` | OpenAI API 호출 가능한 key |
 | `DISCORD_WEBHOOK_URL` | 처음에는 설정하지 않음 |
 
-4. consumer repository의 Actions 화면에서 `Merge Risk Watch` workflow를 `workflow_dispatch`로 수동 실행하고 stdout report를 확인합니다.
+4. consumer repository의 Actions 화면에서 `Merge Risk Watch` workflow를 `workflow_dispatch`로 실행해 `Summary`의 report를 확인하고, 기록에 실패하면 `Run Watcher` step의 stdout을 확인합니다. 이 단계에서 branch 수집, merge signal 수집, OpenAI prediction, report 생성을 점검합니다.
 
-`DISCORD_WEBHOOK_URL`을 비워 두면 Discord로 전송하지 않고 GitHub Actions log에 Markdown report를 출력합니다. 이 단계에서 branch 수집, merge signal 수집, OpenAI prediction, report 생성이 정상인지 확인합니다.
-
-5. stdout report가 정상일 때만 consumer repository secret에 `DISCORD_WEBHOOK_URL`을 추가하고 같은 workflow를 다시 수동 실행합니다.
+5. Actions summary 또는 stdout report가 정상일 때만 consumer repository secret에 `DISCORD_WEBHOOK_URL`을 추가하고 같은 workflow를 다시 수동 실행합니다.
 
 Discord 메시지가 정상적으로 도착하면 consumer repository의 예시 workflow에 `schedule` trigger를 유지하거나 운영 시간에 맞게 조정해 실서비스 실행으로 전환합니다.
 
@@ -233,7 +269,12 @@ scheduled run은 consumer repository의 실제 remote branch를 fetch하고, `ba
 | checkout 또는 fetch 실패 | `WATCHER_GITHUB_TOKEN`의 Repository access, `Contents: Read-only`, workflow `contents: read` 확인 |
 | PR metadata가 비어 있음 | `WATCHER_GITHUB_TOKEN`의 `Pull requests: Read-only`, commit에 연결된 PR 존재 여부 확인 |
 | check metadata가 비어 있음 | 해당 branch head SHA의 check run 존재 여부 확인 |
+| 예상한 branch가 감시되지 않음 | report의 `Excluded Branches`에서 `stale_branch`, `branch_limit` 확인. `base_branch`, `default_branch`는 active branch 선택 대상에서 제외됨 |
+| 비교 조합 수가 예상과 다름 | `watched branches` 수에 `base_branch` 1개를 더한 값을 `n`이라 할 때, 중복 없는 조합 수를 `n × (n - 1) ÷ 2`로 계산. 최대값은 465개 |
+| 모든 조합이 `merge_check_failed`로 표시됨 | runner의 Git이 `git merge-tree --stdin`을 지원하는지 확인 |
 | AI prediction이 `skipped`로 표시됨 | 조합이 `confirmed_conflict`인지 또는 `potential_overlap`에 `same_hunk_overlap` reason이 있는지 확인 |
 | AI prediction이 `failed`로 표시됨 | `OPENAI_API_KEY` secret, OpenAI API 응답 형식, rate limit 상태 확인 |
 | Discord 전송이 되지 않음 | `DISCORD_WEBHOOK_URL` secret, Discord incoming webhook URL, webhook channel 권한 확인 |
+| Actions `Summary`에 report가 보이지 않음 | `Run Watcher` step의 stdout fallback과 `GitHub Actions summary write failed` 오류 확인 |
+| Discord report가 여러 메시지로 나뉨 | 메시지당 2,000자 제한에 따른 정상 동작. branch 조합명과 조각 번호로 순서 확인 |
 | merge된 branch가 계속 감시됨 | GitHub `Automatically delete head branches` 설정과 원격 branch 삭제 상태 확인 |
