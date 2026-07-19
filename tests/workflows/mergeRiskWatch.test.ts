@@ -216,6 +216,7 @@ test("predicts confirmed conflict pair once", async () => {
   const fixture = await createWorkflowGitFixture({
     peerContent: "peer critical content\n"
   })
+  const summaryPath = join(fixture.debugArtifactDir, "summary.md")
   const originalFetch = globalThis.fetch
   const originalOpenAiApiKey = process.env.OPENAI_API_KEY
   const originalDiscordWebhookUrl = process.env.DISCORD_WEBHOOK_URL
@@ -247,16 +248,22 @@ test("predicts confirmed conflict pair once", async () => {
       githubToken: undefined,
       repositoryPath: fixture.repositoryPath,
       baseBranch: "main",
-      debugArtifactDir: fixture.debugArtifactDir
+      debugArtifactDir: fixture.debugArtifactDir,
+      reportDeliveryOptions: {
+        githubStepSummaryPath: summaryPath
+      }
     })
 
     const resultArtifact = await readFile(
       join(fixture.debugArtifactDir, "ai-result.json"),
       "utf8"
     )
+    const summaryReport = await readFile(summaryPath, "utf8")
 
     assert.equal(openAiRequestCount, 1)
     assert.match(discordReport, /resolved critical content/)
+    assert.match(summaryReport, /`feature\/critical` ↔ `feature\/critical-peer`/)
+    assert.match(summaryReport, /resolved critical content/)
     assert.doesNotMatch(resultArtifact, /resolved critical content/)
     assert.equal((await readdir(fixture.debugArtifactDir)).includes("report.md"), false)
   } finally {
@@ -544,7 +551,13 @@ function baseOptions() {
     baseBranch: "develop",
     remoteName: "origin",
     githubApiUrl: "https://api.github.test",
-    githubToken: "github-token"
+    githubToken: "github-token",
+    reportDeliveryOptions: {
+      githubStepSummaryPath: "",
+      stdout: {
+        write: () => true
+      }
+    }
   }
 }
 

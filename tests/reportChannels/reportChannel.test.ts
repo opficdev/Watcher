@@ -3,6 +3,99 @@ import assert from "node:assert/strict"
 import {
   sendMergeRiskReport
 } from "../../src/index.js"
+import {
+  deliver as deliverMergeRiskReport
+} from "../../src/reportChannels/reportChannel.js"
+
+// GitHub Actions에서는 전체 Markdown report를 step summary에 기록하는지 확인
+test("writes full report to GitHub Actions summary", async () => {
+  const appendFile = new AppendFileSpy()
+  const stdout = new StdoutSpy()
+  const markdown = reportWithTwoPairFragments()
+  const result = await deliverMergeRiskReport({
+    markdown
+  }, {
+    discordWebhookUrl: "",
+    githubStepSummaryPath: "/tmp/github-step-summary",
+    appendFile: appendFile.write,
+    stdout
+  })
+
+  assert.deepEqual(result, {
+    ok: true
+  })
+  assert.deepEqual(appendFile.writes, [{
+    path: "/tmp/github-step-summary",
+    content: `${markdown}\n`
+  }])
+  assert.equal(stdout.output, "")
+})
+
+// Discord 설정이 있어도 Actions summary와 Discord에 report를 모두 전달하는지 확인
+test("writes Actions summary and sends Discord report", async () => {
+  const appendFile = new AppendFileSpy()
+  const fetcher = fetchSpy({})
+  const result = await deliverMergeRiskReport({
+    markdown: "## Merge Risk Report"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "/tmp/github-step-summary",
+    appendFile: appendFile.write,
+    fetch: fetcher
+  })
+
+  assert.deepEqual(result, {
+    ok: true
+  })
+  assert.deepEqual(appendFile.writes, [{
+    path: "/tmp/github-step-summary",
+    content: "## Merge Risk Report\n"
+  }])
+  assert.equal(fetcher.requests.length, 1)
+})
+
+// Actions summary 경로가 없으면 stdout과 설정된 Discord에 모두 전달하는지 확인
+test("falls back to stdout and sends Discord report outside Actions", async () => {
+  const fetcher = fetchSpy({})
+  const stdout = new StdoutSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: "## Merge Risk Report"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "",
+    fetch: fetcher,
+    stdout
+  })
+
+  assert.deepEqual(result, {
+    ok: true
+  })
+  assert.equal(stdout.output, "## Merge Risk Report\n")
+  assert.equal(fetcher.requests.length, 1)
+})
+
+// 빈 Markdown report는 Actions summary, stdout, Discord 어디에도 쓰지 않는지 확인
+test("skips every workflow report delivery for empty report", async () => {
+  const appendFile = new AppendFileSpy()
+  const fetcher = fetchSpy({})
+  const stdout = new StdoutSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: " \n\t"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "/tmp/github-step-summary",
+    appendFile: appendFile.write,
+    fetch: fetcher,
+    stdout
+  })
+
+  assert.deepEqual(result, {
+    ok: true
+  })
+  assert.deepEqual(appendFile.writes, [])
+  assert.equal(fetcher.requests.length, 0)
+  assert.equal(stdout.output, "")
+})
 
 // Discord webhook URL이 없으면 Markdown report를 stdout으로 출력하는지 확인
 test("sends report to stdout when discord webhook is missing", async () => {
@@ -344,6 +437,20 @@ class StdoutSpy {
   write(value: string | Uint8Array): boolean {
     this.output += String(value)
     return true
+  }
+}
+
+class AppendFileSpy {
+  readonly writes: Array<{
+    path: string
+    content: string
+  }> = []
+
+  readonly write = async (path: string, content: string): Promise<void> => {
+    this.writes.push({
+      path,
+      content
+    })
   }
 }
 
