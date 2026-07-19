@@ -270,7 +270,7 @@ scheduled run은 consumer repository의 실제 remote branch를 fetch하고, `ba
 | PR metadata가 비어 있음 | `WATCHER_GITHUB_TOKEN`의 `Pull requests: Read-only`, commit에 연결된 PR 존재 여부 확인 |
 | check metadata가 비어 있음 | 해당 branch head SHA의 check run 존재 여부 확인 |
 | 예상한 branch가 감시되지 않음 | report의 `Excluded Branches`에서 `stale_branch`, `branch_limit` 확인. `base_branch`, `default_branch`는 active branch 선택 대상에서 제외됨 |
-| 비교 조합 수가 예상과 다름 | `watched branches`에 `base_branch` 1개를 더한 수에서 중복 없는 조합 수 `n × (n - 1) ÷ 2` 계산. 최대값은 465개 |
+| 비교 조합 수가 예상과 다름 | `watched branches` 수에 `base_branch` 1개를 더한 값을 `n`이라 할 때, 중복 없는 조합 수를 `n × (n - 1) ÷ 2`로 계산. 최대값은 465개 |
 | 모든 조합이 `merge_check_failed`로 표시됨 | runner의 Git이 `git merge-tree --stdin`을 지원하는지 확인 |
 | AI prediction이 `skipped`로 표시됨 | 조합이 `confirmed_conflict`인지 또는 `potential_overlap`에 `same_hunk_overlap` reason이 있는지 확인 |
 | AI prediction이 `failed`로 표시됨 | `OPENAI_API_KEY` secret, OpenAI API 응답 형식, rate limit 상태 확인 |
