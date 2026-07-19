@@ -358,6 +358,250 @@ test("returns failure when discord webhook responds with error", async () => {
   })
 })
 
+// Retry-After header를 우선해 실패한 동일 fragment를 다시 전송하는지 확인
+test("retries the same discord fragment using the Retry-After header", async () => {
+  const fetcher = fetchSpy({}, {
+    outcomes: [
+      {
+        ok: false,
+        status: 429,
+        headers: { "Retry-After": "0.25" },
+        body: { retry_after: 1 }
+      },
+      { ok: true, status: 204 },
+      { ok: true, status: 204 }
+    ]
+  })
+  const wait = new DiscordWaitSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: "a".repeat(2001)
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "",
+    fetch: fetcher,
+    stdout: new StdoutSpy(),
+    wait: wait.wait
+  })
+
+  assert.deepEqual(result, { ok: true })
+  assert.deepEqual(wait.milliseconds, [250])
+  assert.equal(fetcher.requests.length, 3)
+  assert.deepEqual(fetcher.requests[0]?.body, fetcher.requests[1]?.body)
+  assert.notDeepEqual(fetcher.requests[1]?.body, fetcher.requests[2]?.body)
+})
+
+// Retry-After header가 없으면 Discord JSON retry_after를 사용하는지 확인
+test("falls back to the Discord retry_after response body", async () => {
+  const fetcher = fetchSpy({}, {
+    outcomes: [
+      {
+        ok: false,
+        status: 429,
+        body: { retry_after: 0.5 }
+      },
+      { ok: true, status: 204 }
+    ]
+  })
+  const wait = new DiscordWaitSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: "## Merge Risk Report"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "",
+    fetch: fetcher,
+    stdout: new StdoutSpy(),
+    wait: wait.wait
+  })
+
+  assert.deepEqual(result, { ok: true })
+  assert.deepEqual(wait.milliseconds, [500])
+  assert.equal(fetcher.requests.length, 2)
+  assert.deepEqual(fetcher.requests[0]?.body, fetcher.requests[1]?.body)
+})
+
+// 한 fragment가 계속 429를 반환하면 최대 세 번만 재시도하는지 확인
+test("stops after three Discord rate limit retries", async () => {
+  const fetcher = fetchSpy({}, {
+    outcomes: Array.from({ length: 4 }, () => ({
+      ok: false,
+      status: 429,
+      headers: { "Retry-After": "0" }
+    }))
+  })
+  const wait = new DiscordWaitSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: "## Merge Risk Report"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "",
+    fetch: fetcher,
+    stdout: new StdoutSpy(),
+    wait: wait.wait
+  })
+
+  assert.deepEqual(result, {
+    ok: false,
+    errorMessage: "Discord webhook request for report fragment 1 failed with status 429 after 3 retries"
+  })
+  assert.deepEqual(wait.milliseconds, [0, 0, 0])
+  assert.equal(fetcher.requests.length, 4)
+})
+
+// 다음 retry delay가 Discord 전송의 60초 예산을 넘으면 기다리지 않는지 확인
+test("stops when Discord retries exceed the total wait budget", async () => {
+  const fetcher = fetchSpy({}, {
+    outcomes: [
+      {
+        ok: false,
+        status: 429,
+        headers: { "Retry-After": "30" }
+      },
+      {
+        ok: false,
+        status: 429,
+        headers: { "Retry-After": "31" }
+      }
+    ]
+  })
+  const wait = new DiscordWaitSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: "## Merge Risk Report"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "",
+    fetch: fetcher,
+    stdout: new StdoutSpy(),
+    wait: wait.wait
+  })
+
+  assert.deepEqual(result, {
+    ok: false,
+    errorMessage: "Discord webhook request for report fragment 1 failed with status 429: Discord wait budget of 60 seconds exhausted"
+  })
+  assert.deepEqual(wait.milliseconds, [30000])
+  assert.equal(fetcher.requests.length, 2)
+})
+
+// 이전 fragment가 소비한 retry delay를 다음 fragment의 예산에도 반영하는지 확인
+test("shares the Discord retry wait budget across fragments", async () => {
+  const fetcher = fetchSpy({}, {
+    outcomes: [
+      {
+        ok: false,
+        status: 429,
+        headers: { "Retry-After": "30" }
+      },
+      { ok: true, status: 204 },
+      {
+        ok: false,
+        status: 429,
+        headers: { "Retry-After": "31" }
+      }
+    ]
+  })
+  const wait = new DiscordWaitSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: "a".repeat(2001)
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "",
+    fetch: fetcher,
+    stdout: new StdoutSpy(),
+    wait: wait.wait
+  })
+
+  assert.deepEqual(result, {
+    ok: false,
+    errorMessage: "Discord webhook request for report fragment 2 failed with status 429: Discord wait budget of 60 seconds exhausted"
+  })
+  assert.deepEqual(wait.milliseconds, [30000])
+  assert.equal(fetcher.requests.length, 3)
+  assert.deepEqual(fetcher.requests[0]?.body, fetcher.requests[1]?.body)
+  assert.notDeepEqual(fetcher.requests[1]?.body, fetcher.requests[2]?.body)
+})
+
+// 429 응답에 유효한 delay가 없으면 임의의 간격으로 재시도하지 않는지 확인
+test("returns failure when Discord omits the retry delay", async () => {
+  const fetcher = fetchSpy({}, {
+    ok: false,
+    status: 429
+  })
+  const wait = new DiscordWaitSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: "## Merge Risk Report"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "",
+    fetch: fetcher,
+    stdout: new StdoutSpy(),
+    wait: wait.wait
+  })
+
+  assert.deepEqual(result, {
+    ok: false,
+    errorMessage: "Discord webhook request for report fragment 1 failed with status 429: retry delay unavailable"
+  })
+  assert.deepEqual(wait.milliseconds, [])
+  assert.equal(fetcher.requests.length, 1)
+})
+
+// 유효하지 않은 Discord response body가 오류에 포함되지 않는지 확인
+test("does not expose an invalid Discord rate limit response body", async () => {
+  const webhookUrl = "https://discord.test/secret-token"
+  const responseDetail = `retry failed for ${webhookUrl}`
+  const fetcher = fetchSpy({}, {
+    outcomes: [{
+      ok: false,
+      status: 429,
+      body: {
+        retry_after: "0.1",
+        detail: responseDetail
+      }
+    }]
+  })
+  const result = await deliverMergeRiskReport({
+    markdown: "## Merge Risk Report"
+  }, {
+    discordWebhookUrl: webhookUrl,
+    githubStepSummaryPath: "",
+    fetch: fetcher,
+    stdout: new StdoutSpy(),
+    wait: new DiscordWaitSpy().wait
+  })
+
+  assert.equal(result.ok, false)
+  assert.doesNotMatch(result.ok ? "" : result.errorMessage, /secret-token/)
+  assert.doesNotMatch(result.ok ? "" : result.errorMessage, /retry failed/)
+})
+
+// Discord 429 retry가 소진돼도 전체 Actions summary는 먼저 유지되는지 확인
+test("keeps Actions summary after Discord rate limit retries are exhausted", async () => {
+  const appendFile = new AppendFileSpy()
+  const fetcher = fetchSpy({}, {
+    outcomes: Array.from({ length: 4 }, () => ({
+      ok: false,
+      status: 429,
+      headers: { "Retry-After": "0" }
+    }))
+  })
+  const markdown = "## Merge Risk Report"
+  const result = await deliverMergeRiskReport({
+    markdown
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "/tmp/github-step-summary",
+    appendFile: appendFile.write,
+    fetch: fetcher,
+    wait: new DiscordWaitSpy().wait
+  })
+
+  assert.equal(result.ok, false)
+  assert.deepEqual(appendFile.writes, [{
+    path: "/tmp/github-step-summary",
+    content: `${markdown}\n`
+  }])
+})
+
 // fetch 예외 message에 webhook URL이 섞여도 secret 값이 노출되지 않는지 확인
 test("redacts discord webhook url from thrown errors", async () => {
   const result = await sendMergeRiskReport({
@@ -619,6 +863,21 @@ class AppendFileSpy {
   }
 }
 
+class DiscordWaitSpy {
+  readonly milliseconds: number[] = []
+
+  readonly wait = async (milliseconds: number): Promise<void> => {
+    this.milliseconds.push(milliseconds)
+  }
+}
+
+type FetchSpyOutcome = {
+  ok: boolean
+  status: number
+  headers?: HeadersInit
+  body?: unknown
+}
+
 type FetchSpy = typeof fetch & {
   requests: Array<{
     url: string
@@ -633,10 +892,7 @@ function fetchSpy(
   options: {
     ok?: boolean
     status?: number
-    outcomes?: Array<{
-      ok: boolean
-      status: number
-    } | Error>
+    outcomes?: Array<FetchSpyOutcome | Error>
   } = {}
 ): FetchSpy {
   const requests: FetchSpy["requests"] = []
@@ -661,7 +917,8 @@ function fetchSpy(
     return {
       ok: outcome?.ok ?? options.ok ?? true,
       status: outcome?.status ?? options.status ?? 204,
-      json: async () => body
+      headers: new Headers(outcome?.headers),
+      json: async () => outcome?.body ?? body
     } as Response
   }) as FetchSpy
 

@@ -11,6 +11,10 @@ import {
 } from "./discordMessageSplitter.js"
 
 const GITHUB_STEP_SUMMARY_ENV_NAME = "GITHUB_STEP_SUMMARY"
+const DISCORD_RATE_LIMIT_STATUS = 429
+const DISCORD_MAX_RETRY_COUNT = 3
+const DISCORD_WAIT_BUDGET_MILLISECONDS = 60_000
+const MILLISECONDS_PER_SECOND = 1_000
 
 type AppendFileOperation = (
   path: string,
@@ -18,9 +22,19 @@ type AppendFileOperation = (
   encoding: BufferEncoding
 ) => Promise<void>
 
-type WorkflowReportDeliveryOptions = ReportChannelOptions & {
+type DiscordWaitOperation = (milliseconds: number) => Promise<void>
+
+type DiscordReportDeliveryOptions = ReportChannelOptions & {
+  wait?: DiscordWaitOperation
+}
+
+type WorkflowReportDeliveryOptions = DiscordReportDeliveryOptions & {
   githubStepSummaryPath?: string
   appendFile?: AppendFileOperation
+}
+
+type DiscordWaitBudget = {
+  remainingMilliseconds: number
 }
 
 type WorkflowReportDeliveryResult =
@@ -166,35 +180,77 @@ async function sendGitHubActionsSummary(
 async function sendDiscord(
   markdown: string,
   webhookUrl: string,
-  options: ReportChannelOptions
+  options: DiscordReportDeliveryOptions
 ): Promise<ReportChannelResult> {
   const fetcher = options.fetch ?? fetch
+  const wait = options.wait ?? waitFor
   const messages = splitDiscordMessages(markdown)
+  const waitBudget: DiscordWaitBudget = {
+    remainingMilliseconds: DISCORD_WAIT_BUDGET_MILLISECONDS
+  }
 
   for (const message of messages) {
-    try {
-      const response = await fetcher(webhookUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ content: message.content })
-      })
+    let retryCount = 0
 
-      if (!response.ok) {
+    while (true) {
+      try {
+        const response = await fetcher(webhookUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ content: message.content })
+        })
+
+        if (response.ok) {
+          break
+        }
+
+        if (response.status !== DISCORD_RATE_LIMIT_STATUS) {
+          return discordStatusFailureFor(message, response.status)
+        }
+
+        if (DISCORD_MAX_RETRY_COUNT <= retryCount) {
+          return {
+            ok: false,
+            target: "discord",
+            errorMessage: `${failureLocationFor(message)} failed with status ${response.status} after ${DISCORD_MAX_RETRY_COUNT} retries`
+          }
+        }
+
+        const retryAfterMilliseconds = await retryAfterMillisecondsFor(response)
+
+        if (retryAfterMilliseconds === undefined) {
+          return {
+            ok: false,
+            target: "discord",
+            errorMessage: `${failureLocationFor(message)} failed with status ${response.status}: retry delay unavailable`
+          }
+        }
+
+        const hasWaitBudget = await consumeDiscordWaitBudget(
+          retryAfterMilliseconds,
+          waitBudget,
+          wait
+        )
+
+        if (!hasWaitBudget) {
+          return {
+            ok: false,
+            target: "discord",
+            errorMessage: `${failureLocationFor(message)} failed with status ${response.status}: Discord wait budget of 60 seconds exhausted`
+          }
+        }
+
+        retryCount += 1
+      } catch (error) {
         return {
           ok: false,
           target: "discord",
-          errorMessage: `${failureLocationFor(message)} failed with status ${response.status}`
+          errorMessage: `${failureLocationFor(message)} failed: ${
+            redactedErrorMessageFor(error, webhookUrl)
+          }`
         }
-      }
-    } catch (error) {
-      return {
-        ok: false,
-        target: "discord",
-        errorMessage: `${failureLocationFor(message)} failed: ${
-          redactedErrorMessageFor(error, webhookUrl)
-        }`
       }
     }
   }
@@ -203,6 +259,90 @@ async function sendDiscord(
     ok: true,
     target: "discord",
     messageCount: messages.length
+  }
+}
+
+// Discord 429 response에서 numeric seconds retry delay를 millisecond로 변환
+async function retryAfterMillisecondsFor(
+  response: Response
+): Promise<number | undefined> {
+  const headerMilliseconds = millisecondsForSeconds(
+    response.headers.get("Retry-After")
+  )
+
+  if (headerMilliseconds !== undefined) {
+    return headerMilliseconds
+  }
+
+  try {
+    const body = await response.json() as unknown
+
+    if (!body || typeof body !== "object") {
+      return undefined
+    }
+
+    const retryAfter = (body as Record<string, unknown>).retry_after
+
+    if (typeof retryAfter !== "number") {
+      return undefined
+    }
+
+    return millisecondsForSeconds(retryAfter)
+  } catch {
+    return undefined
+  }
+}
+
+// seconds 값을 일찍 재시도하지 않도록 올림한 millisecond로 변환
+function millisecondsForSeconds(value: unknown): number | undefined {
+  if (typeof value !== "number" && typeof value !== "string") {
+    return undefined
+  }
+
+  if (typeof value === "string" && !value.trim()) {
+    return undefined
+  }
+
+  const seconds = Number(value)
+
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return undefined
+  }
+
+  return Math.ceil(seconds * MILLISECONDS_PER_SECOND)
+}
+
+// 전체 Discord delivery 대기 예산 안에서만 다음 delay를 소비
+async function consumeDiscordWaitBudget(
+  milliseconds: number,
+  budget: DiscordWaitBudget,
+  wait: DiscordWaitOperation
+): Promise<boolean> {
+  if (budget.remainingMilliseconds < milliseconds) {
+    return false
+  }
+
+  await wait(milliseconds)
+  budget.remainingMilliseconds -= milliseconds
+  return true
+}
+
+// 실제 timer 대기 구현
+async function waitFor(milliseconds: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, milliseconds)
+  })
+}
+
+// Discord non-429 status 실패 형식을 기존과 동일하게 유지
+function discordStatusFailureFor(
+  message: DiscordMessage,
+  status: number
+): ReportChannelResult {
+  return {
+    ok: false,
+    target: "discord",
+    errorMessage: `${failureLocationFor(message)} failed with status ${status}`
   }
 }
 
