@@ -156,7 +156,7 @@ Merge risk report는 Markdown으로 생성되어 GitHub Actions의 `GITHUB_STEP_
 
 현재 webhook report channel은 Discord incoming webhook 전용입니다. Slack incoming webhook은 payload 형식이 달라 `DISCORD_WEBHOOK_URL`에 Slack URL을 넣어도 동작하지 않습니다.
 
-Discord 전송은 report를 2,000자 이하 메시지로 나누되 `Summary`, section, branch 조합, AI 분석, 해결 순서, `Suggested Patch` 경계와 code fence, 조각 번호를 보존합니다. 전송 오류에는 webhook URL을 노출하지 않습니다.
+Discord 전송은 report를 메시지당 2,000자 이하로 나누되 `Summary`, section, branch 조합, AI 분석, 해결 순서, `Suggested Patch` 경계와 code fence, 조각 번호를 보존합니다. `429` 응답에는 숫자 형식의 `Retry-After` header를 우선하고, 해당 값이 없거나 유효하지 않으면 숫자 형식의 JSON `retry_after`를 사용해 같은 fragment를 최대 3회 재시도합니다. 성공 응답의 `X-RateLimit-Remaining`이 `0`이고 다음 fragment가 있으면 `X-RateLimit-Reset-After`만큼 기다린 뒤 전송합니다. `429` 재시도 대기와 bucket reset 대기는 모든 fragment가 공유하는 Discord 전송 전체 60초 예산에 합산합니다. 필요한 대기값이 없거나 유효하지 않은 경우, 다음 대기가 남은 예산을 초과하는 경우, 재시도 횟수를 소진한 경우에는 추가 요청 없이 Discord 전송 실패를 반환해 Watcher job을 실패로 종료합니다. Discord 전송이 최종 실패해도 이미 기록된 GitHub Actions `Summary`의 전체 report는 유지되며, 오류에는 webhook URL과 Discord 응답 본문을 포함하지 않습니다.
 
 ### Report 예시
 
@@ -277,4 +277,5 @@ scheduled run은 consumer repository의 실제 remote branch를 fetch하고, `ba
 | Discord 전송이 되지 않음 | `DISCORD_WEBHOOK_URL` secret, Discord incoming webhook URL, webhook channel 권한 확인 |
 | Actions `Summary`에 report가 보이지 않음 | `Run Watcher` step의 stdout fallback과 `GitHub Actions summary write failed` 오류 확인 |
 | Discord report가 여러 메시지로 나뉨 | 메시지당 2,000자 제한에 따른 정상 동작. branch 조합명과 조각 번호로 순서 확인 |
+| Discord report가 일부만 전송된 뒤 `429`로 실패함 | `Run Watcher` step 오류에서 `retry delay unavailable`, `after 3 retries`, `Discord wait budget of 60 seconds exhausted` 중 해당 원인을 확인하고, 최종 실패 시 GitHub Actions `Summary`에 먼저 기록된 전체 report 확인 |
 | merge된 branch가 계속 감시됨 | GitHub `Automatically delete head branches` 설정과 원격 branch 삭제 상태 확인 |
