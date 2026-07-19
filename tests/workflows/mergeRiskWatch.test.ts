@@ -216,6 +216,7 @@ test("predicts confirmed conflict pair once", async () => {
   const fixture = await createWorkflowGitFixture({
     peerContent: "peer critical content\n"
   })
+  const summaryPath = join(fixture.debugArtifactDir, "summary.md")
   const originalFetch = globalThis.fetch
   const originalOpenAiApiKey = process.env.OPENAI_API_KEY
   const originalDiscordWebhookUrl = process.env.DISCORD_WEBHOOK_URL
@@ -247,18 +248,76 @@ test("predicts confirmed conflict pair once", async () => {
       githubToken: undefined,
       repositoryPath: fixture.repositoryPath,
       baseBranch: "main",
-      debugArtifactDir: fixture.debugArtifactDir
+      debugArtifactDir: fixture.debugArtifactDir,
+      reportDeliveryOptions: {
+        githubStepSummaryPath: summaryPath
+      }
     })
 
     const resultArtifact = await readFile(
       join(fixture.debugArtifactDir, "ai-result.json"),
       "utf8"
     )
+    const summaryReport = await readFile(summaryPath, "utf8")
 
     assert.equal(openAiRequestCount, 1)
     assert.match(discordReport, /resolved critical content/)
+    assert.match(summaryReport, /`feature\/critical` ↔ `feature\/critical-peer`/)
+    assert.match(summaryReport, /resolved critical content/)
     assert.doesNotMatch(resultArtifact, /resolved critical content/)
     assert.equal((await readdir(fixture.debugArtifactDir)).includes("report.md"), false)
+  } finally {
+    globalThis.fetch = originalFetch
+    restoreEnv("OPENAI_API_KEY", originalOpenAiApiKey)
+    restoreEnv("DISCORD_WEBHOOK_URL", originalDiscordWebhookUrl)
+    await fixture.remove()
+  }
+})
+
+// Actions summary 기록 실패 후에도 stdout과 Discord report를 남기고 workflow를 실패시키는지 확인
+test("propagates summary failure after fallback report delivery", async () => {
+  const fixture = await createWorkflowGitFixture({
+    separateHunks: true
+  })
+  const originalFetch = globalThis.fetch
+  const originalOpenAiApiKey = process.env.OPENAI_API_KEY
+  const originalDiscordWebhookUrl = process.env.DISCORD_WEBHOOK_URL
+  let discordRequestCount = 0
+  let stdoutReport = ""
+
+  delete process.env.OPENAI_API_KEY
+  process.env.DISCORD_WEBHOOK_URL = "https://discord.test/webhook-secret"
+  globalThis.fetch = async input => {
+    assert.equal(new Request(input).url, "https://discord.test/webhook-secret")
+    discordRequestCount += 1
+    return new Response(null, { status: 204 })
+  }
+
+  try {
+    await assert.rejects(
+      run({
+        ...baseOptions(),
+        githubToken: undefined,
+        repositoryPath: fixture.repositoryPath,
+        baseBranch: "main",
+        reportDeliveryOptions: {
+          githubStepSummaryPath: join(fixture.debugArtifactDir, "summary.md"),
+          appendFile: async () => {
+            throw new Error("summary unavailable")
+          },
+          stdout: {
+            write: value => {
+              stdoutReport += String(value)
+              return true
+            }
+          }
+        }
+      }),
+      /GitHub Actions summary write failed: summary unavailable/
+    )
+
+    assert.match(stdoutReport, /## Merge Risk Report/)
+    assert.equal(0 < discordRequestCount, true)
   } finally {
     globalThis.fetch = originalFetch
     restoreEnv("OPENAI_API_KEY", originalOpenAiApiKey)
@@ -544,7 +603,13 @@ function baseOptions() {
     baseBranch: "develop",
     remoteName: "origin",
     githubApiUrl: "https://api.github.test",
-    githubToken: "github-token"
+    githubToken: "github-token",
+    reportDeliveryOptions: {
+      githubStepSummaryPath: "",
+      stdout: {
+        write: () => true
+      }
+    }
   }
 }
 

@@ -18,7 +18,7 @@ import { build as buildAiPredictionPairRequests } from "../ai/predictionPairRequ
 import { predict as predictBranchPairsWithAi } from "../ai/predictionPairRunner.js"
 import { build as buildBranchPairMergeRiskReport } from "../reports/branchPairReportBuilder.js"
 import { format as formatBranchPairMergeRiskReportMarkdown } from "../reports/branchPairMarkdownFormatter.js"
-import { send as sendMergeRiskReport } from "../reportChannels/reportChannel.js"
+import { deliver as deliverMergeRiskReport } from "../reportChannels/reportChannel.js"
 import {
   sanitizeAiPredictionPairFailureDebugEvent,
   sanitizeAiPredictionPairPromptDebugEvent,
@@ -51,6 +51,7 @@ type MergeRiskWatchOptions = {
   debugArtifactDir?: string
   workflowRef?: string
   fetch?: typeof fetch
+  reportDeliveryOptions?: Parameters<typeof deliverMergeRiskReport>[1]
 }
 
 type RemoteBranchLine = {
@@ -243,9 +244,9 @@ export async function run(options: MergeRiskWatchOptions): Promise<void> {
     aiResults: predictions
   })
   const markdown = formatBranchPairMergeRiskReportMarkdown(report)
-  const result = await sendMergeRiskReport({
+  const result = await deliverMergeRiskReport({
     markdown
-  })
+  }, options.reportDeliveryOptions)
 
   if (!result.ok) {
     throw new Error(result.errorMessage)

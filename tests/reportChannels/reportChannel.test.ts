@@ -3,6 +3,264 @@ import assert from "node:assert/strict"
 import {
   sendMergeRiskReport
 } from "../../src/index.js"
+import {
+  deliver as deliverMergeRiskReport
+} from "../../src/reportChannels/reportChannel.js"
+
+// GitHub Actions에서는 전체 Markdown report를 step summary에 기록하는지 확인
+test("writes full report to GitHub Actions summary", async () => {
+  const appendFile = new AppendFileSpy()
+  const stdout = new StdoutSpy()
+  const markdown = reportWithTwoPairFragments()
+  const result = await deliverMergeRiskReport({
+    markdown
+  }, {
+    discordWebhookUrl: "",
+    githubStepSummaryPath: "/tmp/github-step-summary",
+    appendFile: appendFile.write,
+    stdout
+  })
+
+  assert.deepEqual(result, {
+    ok: true
+  })
+  assert.deepEqual(appendFile.writes, [{
+    path: "/tmp/github-step-summary",
+    content: `${markdown}\n`
+  }])
+  assert.equal(stdout.output, "")
+})
+
+// 주입 경로가 없어도 Actions 환경 변수의 summary 경로를 사용하는지 확인
+test("reads GitHub Actions summary path from environment", async () => {
+  const appendFile = new AppendFileSpy()
+  const originalSummaryPath = process.env.GITHUB_STEP_SUMMARY
+  process.env.GITHUB_STEP_SUMMARY = "/tmp/github-step-summary-from-env"
+
+  try {
+    const result = await deliverMergeRiskReport({
+      markdown: "## Merge Risk Report"
+    }, {
+      discordWebhookUrl: "",
+      appendFile: appendFile.write
+    })
+
+    assert.deepEqual(result, {
+      ok: true
+    })
+    assert.deepEqual(appendFile.writes, [{
+      path: "/tmp/github-step-summary-from-env",
+      content: "## Merge Risk Report\n"
+    }])
+  } finally {
+    if (originalSummaryPath === undefined) {
+      delete process.env.GITHUB_STEP_SUMMARY
+    } else {
+      process.env.GITHUB_STEP_SUMMARY = originalSummaryPath
+    }
+  }
+})
+
+// Discord 설정이 있어도 Actions summary와 Discord에 report를 모두 전달하는지 확인
+test("writes Actions summary and sends Discord report", async () => {
+  const appendFile = new AppendFileSpy()
+  const fetcher = fetchSpy({})
+  const result = await deliverMergeRiskReport({
+    markdown: "## Merge Risk Report"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "/tmp/github-step-summary",
+    appendFile: appendFile.write,
+    fetch: fetcher
+  })
+
+  assert.deepEqual(result, {
+    ok: true
+  })
+  assert.deepEqual(appendFile.writes, [{
+    path: "/tmp/github-step-summary",
+    content: "## Merge Risk Report\n"
+  }])
+  assert.equal(fetcher.requests.length, 1)
+})
+
+// Actions summary 경로가 없으면 stdout과 설정된 Discord에 모두 전달하는지 확인
+test("falls back to stdout and sends Discord report outside Actions", async () => {
+  const fetcher = fetchSpy({})
+  const stdout = new StdoutSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: "## Merge Risk Report"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "",
+    fetch: fetcher,
+    stdout
+  })
+
+  assert.deepEqual(result, {
+    ok: true
+  })
+  assert.equal(stdout.output, "## Merge Risk Report\n")
+  assert.equal(fetcher.requests.length, 1)
+})
+
+// 빈 Markdown report는 Actions summary, stdout, Discord 어디에도 쓰지 않는지 확인
+test("skips every workflow report delivery for empty report", async () => {
+  const appendFile = new AppendFileSpy()
+  const fetcher = fetchSpy({})
+  const stdout = new StdoutSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: " \n\t"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "/tmp/github-step-summary",
+    appendFile: appendFile.write,
+    fetch: fetcher,
+    stdout
+  })
+
+  assert.deepEqual(result, {
+    ok: true
+  })
+  assert.deepEqual(appendFile.writes, [])
+  assert.equal(fetcher.requests.length, 0)
+  assert.equal(stdout.output, "")
+})
+
+// Actions summary 기록이 실패해도 stdout fallback과 Discord 전송을 계속하는지 확인
+test("continues stdout and Discord delivery after summary failure", async () => {
+  const fetcher = fetchSpy({})
+  const stdout = new StdoutSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: "## Merge Risk Report"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "/tmp/github-step-summary",
+    appendFile: async () => {
+      throw new Error("summary unavailable")
+    },
+    fetch: fetcher,
+    stdout
+  })
+
+  assert.deepEqual(result, {
+    ok: false,
+    errorMessage: "GitHub Actions summary write failed: summary unavailable"
+  })
+  assert.equal(stdout.output, "## Merge Risk Report\n")
+  assert.equal(fetcher.requests.length, 1)
+})
+
+// Discord 전송이 실패해도 Actions summary에 전체 report가 남는지 확인
+test("keeps Actions summary when Discord delivery fails", async () => {
+  const appendFile = new AppendFileSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: "## Merge Risk Report"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "/tmp/github-step-summary",
+    appendFile: appendFile.write,
+    fetch: fetchSpy({}, {
+      ok: false,
+      status: 500
+    })
+  })
+
+  assert.deepEqual(result, {
+    ok: false,
+    errorMessage: "Discord webhook request for report fragment 1 failed with status 500"
+  })
+  assert.deepEqual(appendFile.writes, [{
+    path: "/tmp/github-step-summary",
+    content: "## Merge Risk Report\n"
+  }])
+})
+
+// Actions summary와 Discord가 모두 실패하면 두 channel 오류를 순서대로 반환하는지 확인
+test("reports summary and Discord delivery failures together", async () => {
+  const fetcher = fetchSpy({}, {
+    ok: false,
+    status: 500
+  })
+  const stdout = new StdoutSpy()
+  const result = await deliverMergeRiskReport({
+    markdown: "## Merge Risk Report"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "/tmp/github-step-summary",
+    appendFile: async () => {
+      throw new Error("summary unavailable")
+    },
+    fetch: fetcher,
+    stdout
+  })
+
+  assert.deepEqual(result, {
+    ok: false,
+    errorMessage: [
+      "GitHub Actions summary write failed: summary unavailable",
+      "Discord webhook request for report fragment 1 failed with status 500"
+    ].join("\n")
+  })
+  assert.equal(stdout.output, "## Merge Risk Report\n")
+  assert.equal(fetcher.requests.length, 1)
+})
+
+// summary, stdout fallback, Discord가 모두 실패하면 오류를 전달 순서대로 반환하는지 확인
+test("reports summary stdout and Discord failures in order", async () => {
+  const fetcher = fetchSpy({}, {
+    ok: false,
+    status: 500
+  })
+  const result = await deliverMergeRiskReport({
+    markdown: "## Merge Risk Report"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "/tmp/github-step-summary",
+    appendFile: async () => {
+      throw new Error("summary unavailable")
+    },
+    fetch: fetcher,
+    stdout: {
+      write: () => {
+        throw new Error("stdout unavailable")
+      }
+    }
+  })
+
+  assert.deepEqual(result, {
+    ok: false,
+    errorMessage: [
+      "GitHub Actions summary write failed: summary unavailable",
+      "stdout report write failed: stdout unavailable",
+      "Discord webhook request for report fragment 1 failed with status 500"
+    ].join("\n")
+  })
+  assert.equal(fetcher.requests.length, 1)
+})
+
+// local stdout 실패가 설정된 Discord 전송을 막지 않는지 확인
+test("continues Discord delivery after stdout failure", async () => {
+  const fetcher = fetchSpy({})
+  const result = await deliverMergeRiskReport({
+    markdown: "## Merge Risk Report"
+  }, {
+    discordWebhookUrl: "https://discord.test/webhook",
+    githubStepSummaryPath: "",
+    fetch: fetcher,
+    stdout: {
+      write: () => {
+        throw new Error("stdout unavailable")
+      }
+    }
+  })
+
+  assert.deepEqual(result, {
+    ok: false,
+    errorMessage: "stdout report write failed: stdout unavailable"
+  })
+  assert.equal(fetcher.requests.length, 1)
+})
 
 // Discord webhook URL이 없으면 Markdown report를 stdout으로 출력하는지 확인
 test("sends report to stdout when discord webhook is missing", async () => {
@@ -344,6 +602,20 @@ class StdoutSpy {
   write(value: string | Uint8Array): boolean {
     this.output += String(value)
     return true
+  }
+}
+
+class AppendFileSpy {
+  readonly writes: Array<{
+    path: string
+    content: string
+  }> = []
+
+  readonly write = async (path: string, content: string): Promise<void> => {
+    this.writes.push({
+      path,
+      content
+    })
   }
 }
 

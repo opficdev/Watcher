@@ -1,3 +1,4 @@
+import { appendFile } from "node:fs/promises"
 import {
   DISCORD_WEBHOOK_URL_ENV_NAME,
   type ReportChannelInput,
@@ -8,6 +9,91 @@ import {
   splitDiscordMessages,
   type DiscordMessage
 } from "./discordMessageSplitter.js"
+
+const GITHUB_STEP_SUMMARY_ENV_NAME = "GITHUB_STEP_SUMMARY"
+
+type AppendFileOperation = (
+  path: string,
+  content: string,
+  encoding: BufferEncoding
+) => Promise<void>
+
+type WorkflowReportDeliveryOptions = ReportChannelOptions & {
+  githubStepSummaryPath?: string
+  appendFile?: AppendFileOperation
+}
+
+type WorkflowReportDeliveryResult =
+  | { ok: true }
+  | {
+      ok: false
+      errorMessage: string
+    }
+
+// workflow에서는 Actions summary 또는 stdout을 기본으로 기록하고 Discord를 추가 전송
+export async function deliver(
+  input: ReportChannelInput,
+  options: WorkflowReportDeliveryOptions = {}
+): Promise<WorkflowReportDeliveryResult> {
+  if (!input.markdown.trim()) {
+    return {
+      ok: true
+    }
+  }
+
+  const errorMessages: string[] = []
+  const summaryPath = options.githubStepSummaryPath ??
+    process.env[GITHUB_STEP_SUMMARY_ENV_NAME]
+
+  if (summaryPath?.trim()) {
+    const summaryResult = await sendGitHubActionsSummary(
+      input.markdown,
+      summaryPath,
+      options
+    )
+
+    if (!summaryResult.ok) {
+      errorMessages.push(summaryResult.errorMessage)
+
+      const stdoutResult = await sendStdout(input.markdown, options)
+
+      if (!stdoutResult.ok) {
+        errorMessages.push(
+          `stdout report write failed: ${stdoutResult.errorMessage}`
+        )
+      }
+    }
+  } else {
+    const stdoutResult = await sendStdout(input.markdown, options)
+
+    if (!stdoutResult.ok) {
+      errorMessages.push(
+        `stdout report write failed: ${stdoutResult.errorMessage}`
+      )
+    }
+  }
+
+  const webhookUrl = options.discordWebhookUrl ?? process.env[DISCORD_WEBHOOK_URL_ENV_NAME]
+
+  if (webhookUrl) {
+    const discordResult = await sendDiscord(input.markdown, webhookUrl, options)
+
+    if (!discordResult.ok) {
+      errorMessages.push(discordResult.errorMessage)
+    }
+  }
+
+  if (0 < errorMessages.length) {
+    return {
+      ok: false,
+      errorMessage: errorMessages.join("\n")
+    }
+  }
+
+  return {
+    ok: true
+  }
+}
 
 // Discord webhook URL이 있으면 Discord channel로 보내고 없으면 stdout으로 fallback
 export async function send(
@@ -51,6 +137,27 @@ async function sendStdout(
       ok: false,
       target: "stdout",
       errorMessage: errorMessageFor(error)
+    }
+  }
+}
+
+// GitHub Actions가 제공한 step summary 파일에 전체 Markdown report를 추가 기록
+async function sendGitHubActionsSummary(
+  markdown: string,
+  path: string,
+  options: WorkflowReportDeliveryOptions
+): Promise<WorkflowReportDeliveryResult> {
+  try {
+    const write = options.appendFile ?? appendFile
+    await write(path, `${markdown}\n`, "utf8")
+
+    return {
+      ok: true
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      errorMessage: `GitHub Actions summary write failed: ${errorMessageFor(error)}`
     }
   }
 }
